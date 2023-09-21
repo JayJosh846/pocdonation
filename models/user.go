@@ -16,7 +16,7 @@ type User struct {
 	Gender        *string            `json:"gender" validate:"required"`
 	Password      *string            `json:"password" validate:"required,min=6"`
 	Country       *string            `json:"country" validate:"required"`
-	Bio           *string            `json:"bio"`
+	Bio           string             `json:"bio"`
 	Username      string             `json:"username"`
 	Balance       string             `json:"balance"`
 	Token         *string            `json:"token"`
