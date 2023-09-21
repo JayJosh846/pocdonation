@@ -122,6 +122,7 @@ func (uc *UserController) Signup(ctx *gin.Context) {
 		return
 	}
 
+	defer cancel()
 	ctx.JSON(http.StatusCreated, gin.H{
 		"error":         false,
 		"response code": 201,
