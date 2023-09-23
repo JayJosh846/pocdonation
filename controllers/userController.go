@@ -22,6 +22,13 @@ import (
 var UserCollection *mongo.Collection = database.GetUserCollection(database.Client, "Users")
 var Validate = validator.New()
 
+type Usererror struct {
+	Error        bool
+	ResponseCode int
+	Message      string
+	Data         string
+}
+
 func HashPassword(password string) string {
 	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
 	if err != nil {
@@ -30,15 +37,20 @@ func HashPassword(password string) string {
 	return string(bytes)
 }
 
-func VerifyPassword(userpassword string, givenpassword string) (bool, string) {
+func VerifyPassword(userpassword string, givenpassword string) (bool, Usererror) {
 	err := bcrypt.CompareHashAndPassword([]byte(givenpassword), []byte(userpassword))
 	valid := true
-	msg := ""
 	if err != nil {
-		msg = "Login Or Passowrd is Incorerct"
 		valid = false
+		return valid,
+			Usererror{
+				Error:        true,
+				ResponseCode: 400,
+				Message:      "Invalid Password",
+				Data:         "",
+			}
 	}
-	return valid, msg
+	return valid, Usererror{}
 }
 
 type UserController struct {
@@ -132,7 +144,41 @@ func (uc *UserController) Signup(ctx *gin.Context) {
 }
 
 func (uc *UserController) Login(ctx *gin.Context) {
-	ctx.JSON(200, "")
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	var user models.User
+	// var founduser models.User
+	if err := ctx.BindJSON(&user); err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	foundUser, err := uc.UserService.GetUser(user.Email)
+	defer cancel()
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "Account does not exist",
+			"data":          "",
+		})
+		return
+	}
+	PasswordIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+	defer cancel()
+	if !PasswordIsValid {
+		ctx.JSON(http.StatusBadRequest, msg)
+		fmt.Println("msg", msg)
+		return
+	}
+	token, refreshToken, _ := generate.TokenGenerator(foundUser.User_ID, *foundUser.Email)
+	defer cancel()
+	generate.UpdateAllTokens(token, refreshToken, foundUser.User_ID)
+	ctx.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 302,
+		"message":       "Login successfully",
+		"data":          foundUser,
+	})
 }
 
 func (uc *UserController) GetUser(ctx *gin.Context) {

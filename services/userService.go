@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/JayJosh846/donationPlatform/models"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
@@ -30,8 +31,11 @@ func (u *UserServiceImpl) CreateUser(user *models.User) error {
 	return err
 }
 
-func (u *UserServiceImpl) GetUser(name *string) (*models.User, error) {
-	return nil, nil
+func (u *UserServiceImpl) GetUser(email *string) (*models.User, error) {
+	var user *models.User
+	query := bson.M{"email": email}
+	err := u.userCollection.FindOne(u.ctx, query).Decode(&user)
+	return user, err
 }
 
 func (u *UserServiceImpl) GetAllUsers() ([]*models.User, error) {
