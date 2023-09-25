@@ -82,9 +82,9 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		log.Println("Error:", e)
 		return
 	}
-	c.JSON(http.StatusFound, gin.H{
+	c.JSON(http.StatusCreated, gin.H{
 		"error":         false,
-		"response code": 302,
+		"response code": 200,
 		"message":       "Payment link generated successfully",
 		"data":          paymentResponse,
 	})
