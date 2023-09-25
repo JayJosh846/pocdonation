@@ -1,10 +1,9 @@
 package controllers
 
 import (
-	"context"
+	"encoding/json"
 	"log"
 	"net/http"
-	"time"
 
 	"github.com/JayJosh846/donationPlatform/middleware"
 	"github.com/JayJosh846/donationPlatform/services"
@@ -21,10 +20,20 @@ type PaymentError struct {
 
 type PaymentController struct {
 	PaymentService services.PaymentService
-	UserService    services.UserService
 }
 type PaymentRequest struct {
-	Amount *int `json:"amount"`
+	Amount int `json:"amount"`
+}
+
+type PaymentResponse struct {
+	Status  bool                `json:"status"`
+	Message string              `json:"message"`
+	Data    PaymentResponseData `json:"data"`
+}
+
+type PaymentResponseData struct {
+	Reference   string `json:"reference"`
+	CheckoutURL string `json:"checkout_url"`
 }
 
 func PaymentConstructor(paymentService services.PaymentService) PaymentController {
@@ -34,9 +43,6 @@ func PaymentConstructor(paymentService services.PaymentService) PaymentControlle
 }
 
 func (pc *PaymentController) Payin(c *gin.Context) {
-	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
-	defer cancel()
-
 	userQueryID := c.Query("userID")
 	if userQueryID == "" {
 		log.Println("user id is empty")
@@ -48,29 +54,40 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 		return
 	}
-	log.Println("userVal", user)
-
 	userStruct, ok := user.(middleware.User)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
-	log.Println("user", userStruct.Email)
-	foundUser, err := pc.UserService.GetUser(userStruct.Email)
-	defer cancel()
+	foundUser, err := pc.PaymentService.PaymentGetUser(userStruct.Email)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user details"})
 		return
 	}
-	var paymentRequest PaymentRequest
+	var (
+		paymentRequest  PaymentRequest
+		paymentResponse PaymentResponse
+	)
 	if err := c.ShouldBindJSON(&paymentRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	amount := paymentRequest.Amount
 
-	pc.PaymentService.Payin(amount, &userQueryID, foundUser)
-	c.JSON(http.StatusOK, foundUser)
-
+	payIn, err := pc.PaymentService.Payin(amount, userQueryID, *foundUser)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	}
+	e := json.Unmarshal([]byte(payIn), &paymentResponse)
+	if e != nil {
+		log.Println("Error:", e)
+		return
+	}
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 302,
+		"message":       "Payment link generated successfully",
+		"data":          paymentResponse,
+	})
 }
 
 func (pc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {

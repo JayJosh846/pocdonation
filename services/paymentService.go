@@ -8,15 +8,18 @@ import (
 	"io"
 	"math/rand"
 	"net/http"
+	"os"
 	"time"
 
 	"github.com/JayJosh846/donationPlatform/models"
 	// "go.mongodb.org/mongo-driver/bson"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
 )
 
 type PaymentService interface {
-	Payin(amount *int, id *string, user *models.User) error
+	Payin(amount int, id string, user models.User) (string, error)
+	PaymentGetUser(*string) (*models.User, error)
 }
 
 type PaymentServiceImpl struct {
@@ -33,11 +36,11 @@ type PaymentRequest struct {
 	Channels       []string `json:"channels"`
 	DefaultChannel string   `json:"default_channel"`
 	Customer       struct {
-		Name  string `json:"name"`
-		Email string `json:"email"`
+		Name  *string `json:"name"`
+		Email *string `json:"email"`
 	} `json:"customer"`
-	NotificationURL string            `json:"notification_url"`
-	Metadata        map[string]string `json:"metadata"`
+	// NotificationURL string            `json:"notification_url"`
+	// Metadata        map[string]string `json:"metadata"`
 }
 
 func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context) PaymentService {
@@ -60,53 +63,66 @@ func generateTransactionReference() string {
 	return transactionReference
 }
 
-func (u *PaymentServiceImpl) Payin(amount *int, id *string, user *models.User) error {
+func (u *PaymentServiceImpl) PaymentGetUser(email *string) (*models.User, error) {
+	var user *models.User
+	query := bson.M{"email": email}
+	err := u.paymentCollection.FindOne(u.ctx, query).Decode(&user)
+	return user, err
+}
+
+func (u *PaymentServiceImpl) Payin(amount int, id string, user models.User) (string, error) {
 	// u.
 	// var paymentRequest PaymentRequest
+	secKey := os.Getenv("KORAPAY_SECRET_KEY")
+	token := secKey
 	url := "https://api.korapay.com/merchant/api/v1/charges/initialize"
 	method := "POST"
 
 	reference := generateTransactionReference()
 	paymentRequest := PaymentRequest{
-		Amount:         *amount,
+		Amount:         amount,
 		RedirectURL:    "https://korapay.com",
 		Currency:       "NGN",
 		Reference:      reference,
 		Channels:       []string{"card", "bank_transfer", "pay_with_bank", "mobile_money"},
 		DefaultChannel: "card",
 		Customer: struct {
-			Name  string `json:"name"`
-			Email string `json:"email"`
+			Name  *string `json:"name"`
+			Email *string `json:"email"`
 		}{
-			Name:  *user.Fullname,
-			Email: *user.Email,
+			Name:  user.Fullname,
+			Email: user.Email,
 		},
 	}
 	requestBodyJSON, err := json.Marshal(paymentRequest)
 	if err != nil {
 		fmt.Println("Error marshaling JSON:", err)
-		return err
+		return "", err
 	}
 	bodyReader := bytes.NewReader([]byte(requestBodyJSON))
 	client := &http.Client{}
 	req, err := http.NewRequest(method, url, bodyReader)
 	if err != nil {
 		fmt.Println(err)
-		return err
+		return "", err
 	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer "+token)
+
 	res, err := client.Do(req)
 	if err != nil {
 		fmt.Println(err)
-		return err
+		return "", err
 	}
 	defer res.Body.Close()
 
 	body, err := io.ReadAll(res.Body)
 	if err != nil {
 		fmt.Println(err)
-		return err
+		return "", err
+
 	}
 	fmt.Println(u.ctx)
 	fmt.Println(string(body))
-	return nil
+	return string(body), nil
 }

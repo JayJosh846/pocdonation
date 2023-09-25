@@ -154,6 +154,7 @@ func (uc *UserController) Login(ctx *gin.Context) {
 		return
 	}
 	foundUser, err := uc.UserService.GetUser(user.Email)
+
 	defer cancel()
 	if err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{
