@@ -33,7 +33,7 @@ func PaymentConstructor(paymentService services.PaymentService) PaymentControlle
 	}
 }
 
-func (uc *PaymentController) Payin(c *gin.Context) {
+func (pc *PaymentController) Payin(c *gin.Context) {
 	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 
@@ -55,7 +55,7 @@ func (uc *PaymentController) Payin(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
 	log.Println("user", userStruct.Email)
-	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	foundUser, err := pc.UserService.GetUser(userStruct.Email)
 	defer cancel()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user details"})
@@ -68,13 +68,13 @@ func (uc *PaymentController) Payin(c *gin.Context) {
 	}
 	amount := paymentRequest.Amount
 
-	uc.PaymentService.Payin(amount, &userQueryID, foundUser)
+	pc.PaymentService.Payin(amount, &userQueryID, foundUser)
 	c.JSON(http.StatusOK, foundUser)
 
 }
 
-func (uc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {
+func (pc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {
 	userRoute := rg.Group("/payment")
-	userRoute.POST("/payin", middleware.Authentication, uc.Payin)
+	userRoute.POST("/payin", middleware.Authentication, pc.Payin)
 	// userRoute.POST("/create", uc.CreateUser)
 }
