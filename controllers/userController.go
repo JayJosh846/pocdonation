@@ -10,6 +10,7 @@ import (
 	"github.com/JayJosh846/donationPlatform/database"
 	"github.com/JayJosh846/donationPlatform/models"
 	"github.com/JayJosh846/donationPlatform/services"
+
 	generate "github.com/JayJosh846/donationPlatform/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
@@ -152,6 +153,8 @@ func (uc *UserController) Login(ctx *gin.Context) {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
 		return
 	}
+	fmt.Println("user", user.Email)
+
 	foundUser, err := uc.UserService.GetUser(user.Email)
 	defer cancel()
 	if err != nil {

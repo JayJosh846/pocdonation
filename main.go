@@ -15,7 +15,9 @@ import (
 var (
 	server *gin.Engine
 	us     services.UserService
+	ps     services.PaymentService
 	uc     controllers.UserController
+	pc     controllers.PaymentController
 	ctx    context.Context
 	userc  *mongo.Collection
 )
@@ -26,6 +28,9 @@ func init() {
 	userc = database.GetUserCollection(database.Client, "Users")
 	us = services.Constructor(userc, ctx)
 	uc = controllers.Constructor(us)
+	ps = services.PaymentConstructor(userc, ctx)
+	pc = controllers.PaymentConstructor(ps)
+
 	server = gin.Default()
 }
 
@@ -36,6 +41,7 @@ func main() {
 	server = gin.Default()
 	basepath := server.Group("/api/v1")
 	uc.UserRoutes(basepath)
+	pc.PaymentRoute(basepath)
 
 	log.Fatal(server.Run(":9090"))
 }

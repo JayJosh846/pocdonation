@@ -22,7 +22,7 @@ type SignedDetails struct {
 }
 
 var UserData *mongo.Collection = database.GetUserCollection(database.Client, "Users")
-var SECRET_KEY = os.Getenv("SECRET_LOVE")
+var SECRET_KEY = os.Getenv("SECRETS")
 
 func TokenGenerator(uid string, email string) (signedtoken string, signedrefreshtoken string, err error) {
 	claims := &SignedDetails{
@@ -58,6 +58,7 @@ func ValidateToken(signedtoken string) (claims *SignedDetails, msg string) {
 		msg = err.Error()
 		return
 	}
+
 	claims, ok := token.Claims.(*SignedDetails)
 	if !ok {
 		msg = "The Token is invalid"
