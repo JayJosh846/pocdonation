@@ -1,8 +1,10 @@
 package controllers
 
 import (
+	"context"
 	"log"
 	"net/http"
+	"time"
 
 	"github.com/JayJosh846/donationPlatform/middleware"
 	"github.com/JayJosh846/donationPlatform/services"
@@ -32,6 +34,9 @@ func PaymentConstructor(paymentService services.PaymentService) PaymentControlle
 }
 
 func (uc *PaymentController) Payin(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
 	userQueryID := c.Query("userID")
 	if userQueryID == "" {
 		log.Println("user id is empty")
@@ -49,17 +54,9 @@ func (uc *PaymentController) Payin(c *gin.Context) {
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
-
-	// var userString *string
-	// if userVal, ok := user.(string); ok {
-	// 	log.Println("userVal", userVal)
-	// 	log.Println("&userVal", &userVal)
-	// 	userString = &userVal
-	// 	log.Println("userString", userString)
-
-	// }
-	// log.Println("user", userString)
-	foundUser, err := uc.UserService.GetUser(&userStruct.Email)
+	log.Println("user", userStruct.Email)
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "Failed to retrieve user details"})
 		return
@@ -78,6 +75,6 @@ func (uc *PaymentController) Payin(c *gin.Context) {
 
 func (uc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {
 	userRoute := rg.Group("/payment")
-	userRoute.POST("/payin", middleware.Authentication(), uc.Payin)
+	userRoute.POST("/payin", middleware.Authentication, uc.Payin)
 	// userRoute.POST("/create", uc.CreateUser)
 }
