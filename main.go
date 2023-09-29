@@ -13,23 +13,31 @@ import (
 )
 
 var (
-	server *gin.Engine
-	us     services.UserService
-	ps     services.PaymentService
-	uc     controllers.UserController
-	pc     controllers.PaymentController
-	ctx    context.Context
-	userc  *mongo.Collection
+	server       *gin.Engine
+	us           services.UserService
+	ps           services.PaymentService
+	ds           services.DonationService
+	ts           services.TransactionService
+	uc           controllers.UserController
+	pc           controllers.PaymentController
+	ctx          context.Context
+	userc        *mongo.Collection
+	transactionc *mongo.Collection
+	donationc    *mongo.Collection
 )
 
 func init() {
 	ctx = context.TODO()
 
 	userc = database.GetUserCollection(database.Client, "Users")
+	transactionc = database.GetUserCollection(database.Client, "Transactions")
+	donationc = database.GetUserCollection(database.Client, "Donations")
 	us = services.Constructor(userc, ctx)
 	uc = controllers.Constructor(us)
 	ps = services.PaymentConstructor(userc, ctx)
-	pc = controllers.PaymentConstructor(ps)
+	ts = services.TransactionConstructor(transactionc, ctx)
+	ds = services.DonationConstructor(donationc, ctx)
+	pc = controllers.PaymentConstructor(ps, ts, ds)
 
 	server = gin.Default()
 }
@@ -43,5 +51,5 @@ func main() {
 	uc.UserRoutes(basepath)
 	pc.PaymentRoute(basepath)
 
-	log.Fatal(server.Run(":9090"))
+	log.Fatal(server.Run(":5000"))
 }

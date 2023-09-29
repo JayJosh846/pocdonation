@@ -16,39 +16,53 @@ type User struct {
 	Gender        *string            `json:"gender" validate:"required"`
 	Password      *string            `json:"password" validate:"required,min=6"`
 	Country       *string            `json:"country" validate:"required"`
-	Bio           string             `json:"bio"`
-	Username      string             `json:"username"`
-	Balance       string             `json:"balance"`
+	Bio           *string            `json:"bio"`
+	Username      *string            `json:"username"`
+	Balance       int                `json:"balance"`
+	Donations     bool               `json:"donations"`
 	Token         *string            `json:"token"`
 	Refresh_Token *string            `json:"refresh_token"`
 	Created_At    time.Time          `json:"created_at"`
 	Updated_At    time.Time          `json:"updated_at"`
 	Transactions  []Transaction      `json:"transaction" bson:"transaction"`
 	Banks         []Bank             `json:"bank" bson:"bank"`
-	Socials       Socials            `json:"socials" bson:"socials"`
+	Social        Social             `json:"socials" bson:"socials"`
 }
 
 type Transaction struct {
-	ID         primitive.ObjectID `json:"_id" bson:"_id"`
-	Amount     *string            `json:"amount" bson:"amount"`
+	ID         primitive.ObjectID `bson:"_id"`
+	Reference  *string            `json:"reference"`
+	Amount     string             `json:"amount"`
+	Status     string             `json:"status"`
 	Created_At time.Time          `json:"created_at"`
 	Updated_At time.Time          `json:"updated_at"`
 }
 
+type Donation struct {
+	ID                    primitive.ObjectID `bson:"_id"`
+	User_ID               string             `json:"user_id"`
+	Transaction_Reference *string            `json:"transaction_reference"`
+	Amount                string             `json:"amount"`
+	Status                string             `json:"status"`
+
+	Created_At time.Time `json:"created_at"`
+	Updated_At time.Time `json:"updated_at"`
+}
+
 type Bank struct {
-	ID             primitive.ObjectID `json:"_id" bson:"_id"`
+	BankID         primitive.ObjectID `bson:"_id"`
 	Account_Number *string            `json:"account_number" bson:"account_number"`
 	Account_Name   *string            `json:"account_name" bson:"account_name"`
 	Bank_Name      *string            `json:"bank_name" bson:"bank_name"`
-	Bvn            string             `json:"bvn" bson:"bvn"`
+	Bvn            *string            `json:"bvn" bson:"bvn"`
 	Created_At     time.Time          `json:"created_at"`
 	Updated_At     time.Time          `json:"updated_at"`
 }
 
-type Socials struct {
-	ID        primitive.ObjectID `json:"_id" bson:"_id"`
-	Twitter   string             `json:"twitter" bson:"twitter"`
-	Instagram string             `json:"instagram" bson:"instagram"`
-	Facebook  string             `json:"facebook" bson:"facebook"`
-	LinkedIn  string             `json:"linkedin" bson:"linkedin"`
+type Social struct {
+	SocialID  primitive.ObjectID `bson:"_id"`
+	Twitter   *string            `json:"twitter" bson:"twitter"`
+	Instagram *string            `json:"instagram" bson:"instagram"`
+	Facebook  *string            `json:"facebook" bson:"facebook"`
+	LinkedIn  *string            `json:"linkedin" bson:"linkedin"`
 }

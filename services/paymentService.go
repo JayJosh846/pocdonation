@@ -18,8 +18,9 @@ import (
 )
 
 type PaymentService interface {
-	Payin(amount int, id string, user models.User) (string, error)
+	Payin(amount string, user models.User) (string, error)
 	PaymentGetUser(*string) (*models.User, error)
+	VerifyDeposit(eventData []byte) (WebhookPayload, error)
 }
 
 type PaymentServiceImpl struct {
@@ -28,19 +29,33 @@ type PaymentServiceImpl struct {
 }
 
 type PaymentRequest struct {
-	Amount         int      `json:"amount"`
-	RedirectURL    string   `json:"redirect_url"`
-	Currency       string   `json:"currency"`
-	Reference      string   `json:"reference"`
-	Narration      string   `json:"narration"`
-	Channels       []string `json:"channels"`
-	DefaultChannel string   `json:"default_channel"`
-	Customer       struct {
-		Name  *string `json:"name"`
-		Email *string `json:"email"`
-	} `json:"customer"`
-	// NotificationURL string            `json:"notification_url"`
+	Amount string  `json:"amount"`
+	Email  *string `json:"email"`
+	// RedirectURL    string   `json:"redirect_url"`
+	Currency  string   `json:"currency"`
+	Reference string   `json:"reference"`
+	Channels  []string `json:"channels"`
+	// DefaultChannel string   `json:"default_channel"`
+	// Customer       struct {
+	// 	Name  *string `json:"name"`
+	// 	Email *string `json:"email"`
+	// } `json:"customer"`
+	// NotificationURL string `json:"notification_url"`
 	// Metadata        map[string]string `json:"metadata"`
+}
+
+type WebhookPayload struct {
+	Event string `json:"event"`
+	Data  struct {
+		Reference string `json:"reference"`
+		Currency  string `json:"currency"`
+		Amount    int    `json:"amount"`
+		Channel   string `json:"channel"`
+		// Fee               string `json:"fee"`
+		Status            string `json:"status"`
+		Payment_method    string `json:"payment_method"`
+		Payment_reference string `json:"payment_reference"`
+	} `json:"data"`
 }
 
 func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context) PaymentService {
@@ -53,13 +68,10 @@ func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context
 func generateTransactionReference() string {
 	// Generate a random identifier.
 	identifier := rand.Intn(1000000) // Change the range as needed.
-
 	// Get the current timestamp.
 	currentTime := time.Now()
-
 	// Format the timestamp and combine it with the identifier.
 	transactionReference := currentTime.Format("20060102150405") + fmt.Sprintf("%06d", identifier)
-
 	return transactionReference
 }
 
@@ -70,29 +82,30 @@ func (u *PaymentServiceImpl) PaymentGetUser(email *string) (*models.User, error)
 	return user, err
 }
 
-func (u *PaymentServiceImpl) Payin(amount int, id string, user models.User) (string, error) {
+func (u *PaymentServiceImpl) Payin(amount string, user models.User) (string, error) {
 	// u.
 	// var paymentRequest PaymentRequest
-	secKey := os.Getenv("KORAPAY_SECRET_KEY")
+	secKey := os.Getenv("PAYSTACK_SEC_KEY")
 	token := secKey
-	url := "https://api.korapay.com/merchant/api/v1/charges/initialize"
+	url := "https://api.paystack.co/transaction/initialize"
 	method := "POST"
 
 	reference := generateTransactionReference()
 	paymentRequest := PaymentRequest{
-		Amount:         amount,
-		RedirectURL:    "https://korapay.com",
-		Currency:       "NGN",
-		Reference:      reference,
-		Channels:       []string{"card", "bank_transfer", "pay_with_bank", "mobile_money"},
-		DefaultChannel: "card",
-		Customer: struct {
-			Name  *string `json:"name"`
-			Email *string `json:"email"`
-		}{
-			Name:  user.Fullname,
-			Email: user.Email,
-		},
+		Amount:    amount,
+		Email:     user.Email,
+		Currency:  "NGN",
+		Reference: reference,
+		Channels:  []string{"card", "bank", "ussd", "mobile_money", "qr", "bank_transfer"},
+		// DefaultChannel: "card",
+		// Customer: struct {
+		// 	Name  *string `json:"name"`
+		// 	Email *string `json:"email"`
+		// }{
+		// 	Name:  user.Fullname,
+		// 	Email: user.Email,
+		// },
+		// NotificationURL: "https://2764-41-217-1-238.ngrok-free.app/api/v1/payment/confirmation",
 	}
 	requestBodyJSON, err := json.Marshal(paymentRequest)
 	if err != nil {
@@ -122,7 +135,17 @@ func (u *PaymentServiceImpl) Payin(amount int, id string, user models.User) (str
 		return "", err
 
 	}
-	fmt.Println(u.ctx)
-	fmt.Println(string(body))
+	fmt.Println("ctx", u.ctx)
 	return string(body), nil
+}
+
+func (u *PaymentServiceImpl) VerifyDeposit(eventData []byte) (WebhookPayload, error) {
+
+	var webhookPayload WebhookPayload
+	if err := json.Unmarshal(eventData, &webhookPayload); err != nil {
+		fmt.Println("Error:", err)
+		return WebhookPayload{}, err
+	}
+	fmt.Println("Payload:", webhookPayload.Event)
+	return webhookPayload, nil
 }
