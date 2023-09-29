@@ -50,6 +50,7 @@ type WebhookPayload struct {
 		Reference string `json:"reference"`
 		Currency  string `json:"currency"`
 		Amount    int    `json:"amount"`
+		Email     string `json:"email"`
 		Channel   string `json:"channel"`
 		// Fee               string `json:"fee"`
 		Status            string `json:"status"`

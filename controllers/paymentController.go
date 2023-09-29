@@ -26,6 +26,7 @@ type PaymentError struct {
 
 type PaymentController struct {
 	PaymentService     services.PaymentService
+	UserService        services.UserService
 	TransactionService services.TransactionService
 	DonationService    services.DonationService
 }
@@ -48,11 +49,14 @@ type PaymentResponseData struct {
 
 func PaymentConstructor(
 	paymentService services.PaymentService,
+	userService services.UserService,
 	transactionService services.TransactionService,
 	donationService services.DonationService,
+
 ) PaymentController {
 	return PaymentController{
 		PaymentService:     paymentService,
+		UserService:        userService,
 		TransactionService: transactionService,
 		DonationService:    donationService,
 	}
@@ -64,8 +68,8 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 	var (
 		paymentRequest  PaymentRequest
 		paymentResponse PaymentResponse
-		createTrans     models.Transaction
-		createDonation  models.Donation
+		createTrans     *models.Transaction
+		createDonation  *models.Donation
 	)
 	if err := c.ShouldBindJSON(&paymentRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -84,7 +88,6 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 	}
 	foundUser, err := pc.PaymentService.PaymentGetUser(&paymentRequest.Email)
 	if err != nil {
-		fmt.Println(validationErr)
 		c.JSON(http.StatusNotFound, gin.H{
 			"error":         true,
 			"response code": 404,
@@ -118,7 +121,7 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 	createTrans.Reference = &paymentResponse.Data.Reference
 	createTrans.Amount = paymentRequest.Amount
 	createTrans.Status = "pending"
-	createErr := pc.TransactionService.CreateTransaction(&createTrans)
+	createErr := pc.TransactionService.CreateTransaction(createTrans)
 	if createErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         true,
@@ -133,7 +136,7 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 	createDonation.Transaction_Reference = &paymentResponse.Data.Reference
 	createDonation.Amount = paymentRequest.Amount
 	createDonation.Status = "pending"
-	createDonErr := pc.DonationService.CreateDonation(&createDonation)
+	createDonErr := pc.DonationService.CreateDonation(createDonation)
 	if createDonErr != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         true,
@@ -162,10 +165,37 @@ func (pc *PaymentController) ConfirmWebhook(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-	_, verifyErr := pc.PaymentService.VerifyDeposit(jsonData)
+	verifyRes, verifyErr := pc.PaymentService.VerifyDeposit(jsonData)
 	if verifyErr != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": verifyErr.Error()})
 	}
+	paidUser, err := pc.UserService.GetUser(&verifyRes.Data.Email)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         true,
+			"response code": 404,
+			"message":       "Failed to retrieve paid user details",
+			"data":          "",
+		})
+		return
+	}
+	updateErr := pc.UserService.UpdateUserBalance(paidUser, verifyRes.Data.Amount)
+	if updateErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": updateErr.Error()})
+		return
+	}
+	updateTransErr := pc.TransactionService.UpdateTransactionStatus(&verifyRes.Data.Reference)
+	if updateTransErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": updateTransErr.Error()})
+		return
+	}
+	updateDonationsErr := pc.DonationService.UpdateDonationStatus(&verifyRes.Data.Reference)
+	if updateDonationsErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": updateDonationsErr.Error()})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{"message": "success"})
+
 }
 
 // func (pc *PaymentController) Payin(c *gin.Context) {
