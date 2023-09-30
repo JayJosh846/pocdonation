@@ -39,14 +39,11 @@ type Transaction struct {
 }
 
 type Donation struct {
-	ID                    primitive.ObjectID `bson:"_id"`
-	User_ID               string             `json:"user_id"`
-	Transaction_Reference *string            `json:"transaction_reference"`
-	Amount                string             `json:"amount"`
-	Status                string             `json:"status"`
-
-	Created_At time.Time `json:"created_at"`
-	Updated_At time.Time `json:"updated_at"`
+	ID         primitive.ObjectID `bson:"_id"`
+	User_ID    string             `json:"user_id"`
+	Amount     string             `json:"amount"`
+	Created_At time.Time          `json:"created_at"`
+	Updated_At time.Time          `json:"updated_at"`
 }
 
 type Bank struct {

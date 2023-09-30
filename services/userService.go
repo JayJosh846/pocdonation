@@ -42,6 +42,7 @@ func (u *UserServiceImpl) GetUser(email *string) (*models.User, error) {
 }
 
 func (u *UserServiceImpl) UpdateUserBalance(user *models.User, amount int) error {
+	// var transactionUser []*models.Transaction
 	user.Balance = user.Balance + amount
 	filter := bson.D{primitive.E{Key: "email", Value: user.Email}}
 	update := bson.D{
@@ -51,6 +52,15 @@ func (u *UserServiceImpl) UpdateUserBalance(user *models.User, amount int) error
 				primitive.E{Key: "balance", Value: user.Balance},
 			},
 		},
+		// primitive.E{
+		// 	Key: "$push",
+		// 	Value: bson.D{
+		// 		primitive.E{
+		// 			Key:   "transaction",
+		// 			Value: bson.D{primitive.E{Key: "$each", Value: transactionUser}},
+		// 		},
+		// 	},
+		// },
 	}
 	result, _ := u.userCollection.UpdateOne(u.ctx, filter, update)
 	if result.MatchedCount != 1 {

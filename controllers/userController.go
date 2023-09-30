@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/JayJosh846/donationPlatform/database"
+	"github.com/JayJosh846/donationPlatform/middleware"
 	"github.com/JayJosh846/donationPlatform/models"
 	"github.com/JayJosh846/donationPlatform/services"
 
@@ -55,17 +56,21 @@ func VerifyPassword(userpassword string, givenpassword string) (bool, Usererror)
 }
 
 type UserController struct {
-	UserService services.UserService
+	UserService     services.UserService
+	DonationService services.DonationService
 }
 
-func Constructor(userService services.UserService) UserController {
+func Constructor(
+	userService services.UserService,
+	donationService services.DonationService,
+) UserController {
 	return UserController{
-		UserService: userService,
+		UserService:     userService,
+		DonationService: donationService,
 	}
 }
 
 func (uc *UserController) Signup(ctx *gin.Context) {
-
 	var ct, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	var user models.User
@@ -183,6 +188,63 @@ func (uc *UserController) Login(ctx *gin.Context) {
 	})
 }
 
+func (uc *UserController) Donation(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userStruct, ok := user.(middleware.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
+	}
+	var donation models.Donation
+	if err := c.BindJSON(&donation); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	validationErr := Validate.Struct(donation)
+	if validationErr != nil {
+		fmt.Println(validationErr)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       validationErr.Error(),
+			"data":          "",
+		})
+		return
+	}
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+	donation.ID = primitive.NewObjectID()
+	donation.User_ID = foundUser.User_ID
+	// donation.Amount = donation.Amount
+	donation.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	donation.Updated_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	createErr := uc.DonationService.CreateDonation(&donation)
+	if createErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": createErr.Error()})
+		return
+	}
+	defer cancel()
+	c.JSON(http.StatusCreated, gin.H{
+		"error":         false,
+		"response code": 201,
+		"message":       "Donation created successfully",
+		"data":          "",
+	})
+}
+
 func (uc *UserController) GetUser(ctx *gin.Context) {
 	ctx.JSON(200, "")
 }
@@ -195,5 +257,10 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 	userRoute := rg.Group("/users")
 	userRoute.POST("/sign-up", uc.Signup)
 	userRoute.POST("/login", uc.Login)
+	userRoute.POST("/donate",
+		middleware.Authentication,
+		uc.Donation,
+	)
+
 	// userRoute.POST("/create", uc.CreateUser)
 }
