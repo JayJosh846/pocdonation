@@ -37,9 +37,9 @@ func init() {
 	us = services.Constructor(userc, ctx)
 	uc = controllers.Constructor(us)
 	ps = services.PaymentConstructor(paymentc, ctx)
-	pc = controllers.PaymentConstructor(ps, us, ts, ds)
 	ts = services.TransactionConstructor(transactionc, ctx)
 	ds = services.DonationConstructor(donationc, ctx)
+	pc = controllers.PaymentConstructor(ps, us, ts, ds)
 
 	server = gin.Default()
 }
