@@ -69,7 +69,7 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		paymentRequest  PaymentRequest
 		paymentResponse PaymentResponse
 		createTrans     models.Transaction
-		createDonation  models.Donation
+		// createDonation  models.Donation
 	)
 	if err := c.ShouldBindJSON(&paymentRequest); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -130,21 +130,21 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		})
 		return
 	}
-	createDonation.ID = primitive.NewObjectID()
-	createDonation.User_ID = foundUser.User_ID
-	createDonation.Transaction_Reference = &paymentResponse.Data.Reference
-	createDonation.Amount = paymentRequest.Amount
-	createDonation.Status = "pending"
-	createDonErr := pc.DonationService.CreateDonation(&createDonation)
-	if createDonErr != nil {
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":         true,
-			"response code": 400,
-			"message":       createDonErr.Error(),
-			"data":          "",
-		})
-		return
-	}
+	// createDonation.ID = primitive.NewObjectID()
+	// createDonation.User_ID = foundUser.User_ID
+	// createDonation.Transaction_Reference = &paymentResponse.Data.Reference
+	// createDonation.Amount = paymentRequest.Amount
+	// createDonation.Status = "pending"
+	// createDonErr := pc.DonationService.CreateDonation(&createDonation)
+	// if createDonErr != nil {
+	// 	c.JSON(http.StatusBadRequest, gin.H{
+	// 		"error":         true,
+	// 		"response code": 400,
+	// 		"message":       createDonErr.Error(),
+	// 		"data":          "",
+	// 	})
+	// 	return
+	// }
 	c.JSON(http.StatusFound, gin.H{
 		"error":         false,
 		"response code": 302,

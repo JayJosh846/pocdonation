@@ -35,10 +35,10 @@ func init() {
 	transactionc = database.GetUserCollection(database.Client, "Transactions")
 	donationc = database.GetUserCollection(database.Client, "Donations")
 	us = services.Constructor(userc, ctx)
-	uc = controllers.Constructor(us)
 	ps = services.PaymentConstructor(paymentc, ctx)
 	ts = services.TransactionConstructor(transactionc, ctx)
 	ds = services.DonationConstructor(donationc, ctx)
+	uc = controllers.Constructor(us, ds)
 	pc = controllers.PaymentConstructor(ps, us, ts, ds)
 
 	server = gin.Default()
