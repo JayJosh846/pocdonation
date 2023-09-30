@@ -29,8 +29,8 @@ type PaymentServiceImpl struct {
 }
 
 type PaymentRequest struct {
-	Amount string  `json:"amount"`
-	Email  *string `json:"email"`
+	Amount string `json:"amount"`
+	Email  string `json:"email"`
 	// RedirectURL    string   `json:"redirect_url"`
 	Currency  string   `json:"currency"`
 	Reference string   `json:"reference"`
@@ -52,9 +52,12 @@ type WebhookPayload struct {
 		Amount    int    `json:"amount"`
 		Channel   string `json:"channel"`
 		// Fee               string `json:"fee"`
-		Status            string `json:"status"`
-		Payment_method    string `json:"payment_method"`
-		Payment_reference string `json:"payment_reference"`
+		Status   string `json:"status"`
+		Customer struct {
+			Email string `json:"email"`
+		} `json:"customer"`
+		// Payment_method    string `json:"payment_method"`
+		// Payment_reference string `json:"payment_reference"`
 	} `json:"data"`
 }
 
@@ -90,10 +93,12 @@ func (u *PaymentServiceImpl) Payin(amount string, user models.User) (string, err
 	url := "https://api.paystack.co/transaction/initialize"
 	method := "POST"
 
+	fmt.Println("user from paymentservice", *user.Email)
+
 	reference := generateTransactionReference()
 	paymentRequest := PaymentRequest{
 		Amount:    amount,
-		Email:     user.Email,
+		Email:     *user.Email,
 		Currency:  "NGN",
 		Reference: reference,
 		Channels:  []string{"card", "bank", "ussd", "mobile_money", "qr", "bank_transfer"},
@@ -146,6 +151,6 @@ func (u *PaymentServiceImpl) VerifyDeposit(eventData []byte) (WebhookPayload, er
 		fmt.Println("Error:", err)
 		return WebhookPayload{}, err
 	}
-	fmt.Println("Payload:", webhookPayload.Event)
+	fmt.Println("Payload:", webhookPayload)
 	return webhookPayload, nil
 }

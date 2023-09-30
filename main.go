@@ -22,6 +22,7 @@ var (
 	pc           controllers.PaymentController
 	ctx          context.Context
 	userc        *mongo.Collection
+	paymentc     *mongo.Collection
 	transactionc *mongo.Collection
 	donationc    *mongo.Collection
 )
@@ -30,14 +31,15 @@ func init() {
 	ctx = context.TODO()
 
 	userc = database.GetUserCollection(database.Client, "Users")
+	paymentc = database.GetUserCollection(database.Client, "Users")
 	transactionc = database.GetUserCollection(database.Client, "Transactions")
 	donationc = database.GetUserCollection(database.Client, "Donations")
 	us = services.Constructor(userc, ctx)
 	uc = controllers.Constructor(us)
-	ps = services.PaymentConstructor(userc, ctx)
+	ps = services.PaymentConstructor(paymentc, ctx)
 	ts = services.TransactionConstructor(transactionc, ctx)
 	ds = services.DonationConstructor(donationc, ctx)
-	pc = controllers.PaymentConstructor(ps, ts, ds)
+	pc = controllers.PaymentConstructor(ps, us, ts, ds)
 
 	server = gin.Default()
 }
