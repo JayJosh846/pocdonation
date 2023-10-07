@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strconv"
+	"time"
 
 	// "io"
 	"log"
@@ -11,6 +12,7 @@ import (
 
 	"github.com/JayJosh846/donationPlatform/models"
 	"github.com/JayJosh846/donationPlatform/services"
+	helper "github.com/JayJosh846/donationPlatform/utils"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
@@ -31,8 +33,9 @@ type PaymentController struct {
 	DonationService    services.DonationService
 }
 type PaymentRequest struct {
-	Email  string `json:"email" validate:"required"`
-	Amount string `json:"amount" validate:"required"`
+	Email       string `json:"email" validate:"required"`
+	Donor_Email string `json:"donor_email" validate:"required"`
+	Amount      string `json:"amount" validate:"required"`
 }
 
 type PaymentResponse struct {
@@ -69,6 +72,7 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		paymentRequest  PaymentRequest
 		paymentResponse PaymentResponse
 		createTrans     models.Transaction
+		createDonor     models.User
 		// createDonation  models.Donation
 	)
 	if err := c.ShouldBindJSON(&paymentRequest); err != nil {
@@ -130,6 +134,48 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		})
 		return
 	}
+	availableDonor, donorErr := pc.UserService.GetUser(&paymentRequest.Donor_Email)
+	if donorErr != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "donorErr.Error()"})
+	}
+	fmt.Println("availableDonor", availableDonor)
+	if availableDonor != (&models.User{}) {
+		c.JSON(http.StatusFound, gin.H{
+			"error":         false,
+			"response code": 200,
+			"message":       "Payment link generated successfully",
+			"data":          paymentResponse,
+		})
+	}
+	userName, err := helper.ExtractUsernameFromEmail(paymentRequest.Donor_Email)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	password, ranPassErr := helper.GenerateRandomPassword(12)
+	if ranPassErr != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": ranPassErr})
+		return
+	}
+	hashedPassword := helper.HashPassword(password)
+
+	createDonor.Password = &hashedPassword
+	createDonor.ID = primitive.NewObjectID()
+	createDonor.User_ID = createDonor.ID.Hex()
+	createDonor.Email = &paymentRequest.Donor_Email
+	createDonor.Username = &userName
+	createDonor.Role = "donor"
+	createDonor.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	createDonor.Updated_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
+	token, refreshtoken, _ := helper.TokenGenerator(createDonor.User_ID, paymentRequest.Email)
+	createDonor.Token = &token
+	createDonor.Refresh_Token = &refreshtoken
+
+	createDonorErr := pc.UserService.CreateUser(&createDonor)
+	if createDonorErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": createErr.Error()})
+		return
+	}
 	// createDonation.ID = primitive.NewObjectID()
 	// createDonation.User_ID = foundUser.User_ID
 	// createDonation.Transaction_Reference = &paymentResponse.Data.Reference
@@ -151,6 +197,7 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		"message":       "Payment link generated successfully",
 		"data":          paymentResponse,
 	})
+
 }
 
 func (pc *PaymentController) ConfirmWebhook(c *gin.Context) {
@@ -181,11 +228,11 @@ func (pc *PaymentController) ConfirmWebhook(c *gin.Context) {
 	if updateTransErr != nil {
 		fmt.Println("updateTransErr", updateTransErr)
 	}
-	updateDonationsErr := pc.DonationService.UpdateDonationStatus(&verifyRes.Data.Reference)
-	if updateDonationsErr != nil {
-		fmt.Println("updateDonationsErr", updateDonationsErr)
-	}
-	c.JSON(http.StatusOK, gin.H{"message": "success"})
+	// updateDonationsErr := pc.DonationService.UpdateDonationStatus(&verifyRes.Data.Reference)
+	// if updateDonationsErr != nil {
+	// 	fmt.Println("updateDonationsErr", updateDonationsErr)
+	// }
+	// c.JSON(http.StatusOK, gin.H{"message": "success"})
 
 }
 

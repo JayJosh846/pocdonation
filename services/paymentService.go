@@ -6,12 +6,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"math/rand"
 	"net/http"
 	"os"
-	"time"
 
 	"github.com/JayJosh846/donationPlatform/models"
+	helper "github.com/JayJosh846/donationPlatform/utils"
+
 	// "go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/mongo"
@@ -68,16 +68,6 @@ func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context
 	}
 }
 
-func generateTransactionReference() string {
-	// Generate a random identifier.
-	identifier := rand.Intn(1000000) // Change the range as needed.
-	// Get the current timestamp.
-	currentTime := time.Now()
-	// Format the timestamp and combine it with the identifier.
-	transactionReference := currentTime.Format("20060102150405") + fmt.Sprintf("%06d", identifier)
-	return transactionReference
-}
-
 func (u *PaymentServiceImpl) PaymentGetUser(email *string) (*models.User, error) {
 	var user *models.User
 	query := bson.M{"email": email}
@@ -95,7 +85,7 @@ func (u *PaymentServiceImpl) Payin(amount string, user models.User) (string, err
 
 	fmt.Println("user from paymentservice", *user.Email)
 
-	reference := generateTransactionReference()
+	reference := helper.GenerateTransactionReference()
 	paymentRequest := PaymentRequest{
 		Amount:    amount,
 		Email:     *user.Email,

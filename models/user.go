@@ -16,10 +16,12 @@ type User struct {
 	Gender        *string            `json:"gender" validate:"required"`
 	Password      *string            `json:"password" validate:"required,min=6"`
 	Country       *string            `json:"country" validate:"required"`
+	Role          string             `json:"role"`
 	Bio           *string            `json:"bio"`
 	Username      *string            `json:"username"`
 	Balance       int                `json:"balance"`
 	Donations     bool               `json:"donations"`
+	Link          string             `json:"link"`
 	Token         *string            `json:"token"`
 	Refresh_Token *string            `json:"refresh_token"`
 	Created_At    time.Time          `json:"created_at"`

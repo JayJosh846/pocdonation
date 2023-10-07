@@ -18,42 +18,10 @@ import (
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
-	"golang.org/x/crypto/bcrypt"
 )
 
 var UserCollection *mongo.Collection = database.GetUserCollection(database.Client, "Users")
 var Validate = validator.New()
-
-type Usererror struct {
-	Error        bool
-	ResponseCode int
-	Message      string
-	Data         string
-}
-
-func HashPassword(password string) string {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), 14)
-	if err != nil {
-		log.Panic(err)
-	}
-	return string(bytes)
-}
-
-func VerifyPassword(userpassword string, givenpassword string) (bool, Usererror) {
-	err := bcrypt.CompareHashAndPassword([]byte(givenpassword), []byte(userpassword))
-	valid := true
-	if err != nil {
-		valid = false
-		return valid,
-			Usererror{
-				Error:        true,
-				ResponseCode: 400,
-				Message:      "Invalid Password",
-				Data:         "",
-			}
-	}
-	return valid, Usererror{}
-}
 
 type UserController struct {
 	UserService     services.UserService
@@ -121,11 +89,21 @@ func (uc *UserController) Signup(ctx *gin.Context) {
 		})
 		return
 	}
-	password := HashPassword(*user.Password)
+	password := generate.HashPassword(*user.Password)
 	user.Password = &password
+	userName, err := generate.ExtractUsernameFromEmail(*user.Email)
+	if err != nil {
+		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	baseURL := "https://donation-platform.netlify.app/user/"
+	link := fmt.Sprintf("%s%s", baseURL, userName)
 
 	user.ID = primitive.NewObjectID()
 	user.User_ID = user.ID.Hex()
+	user.Username = &userName
+	user.Link = link
+	user.Role = "user"
 	user.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 	user.Updated_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 	token, refreshtoken, _ := generate.TokenGenerator(user.User_ID, *user.Email)
@@ -170,7 +148,7 @@ func (uc *UserController) Login(ctx *gin.Context) {
 		})
 		return
 	}
-	PasswordIsValid, msg := VerifyPassword(*user.Password, *foundUser.Password)
+	PasswordIsValid, msg := generate.VerifyPassword(*user.Password, *foundUser.Password)
 	defer cancel()
 	if !PasswordIsValid {
 		ctx.JSON(http.StatusBadRequest, msg)
