@@ -32,12 +32,15 @@ type User struct {
 }
 
 type Transaction struct {
-	ID         primitive.ObjectID `bson:"_id"`
-	Reference  *string            `json:"reference"`
-	Amount     string             `json:"amount"`
-	Status     string             `json:"status"`
-	Created_At time.Time          `json:"created_at"`
-	Updated_At time.Time          `json:"updated_at"`
+	ID             primitive.ObjectID `bson:"_id"`
+	Reference      *string            `json:"reference"`
+	Donor_Email    *string            `json:"donor_email" validate:"required"`
+	User_ID        string             `json:"user_id"`
+	User_Full_name *string            `json:"user_full_name" validate:"required,min=2,max=30"`
+	Amount         string             `json:"amount"`
+	Status         string             `json:"status"`
+	Created_At     time.Time          `json:"created_at"`
+	Updated_At     time.Time          `json:"updated_at"`
 }
 
 type Donation struct {

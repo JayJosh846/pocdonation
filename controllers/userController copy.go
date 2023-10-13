@@ -24,17 +24,20 @@ var UserCollection *mongo.Collection = database.GetUserCollection(database.Clien
 var Validate = validator.New()
 
 type UserController struct {
-	UserService     services.UserService
-	DonationService services.DonationService
+	UserService        services.UserService
+	TransactionService services.TransactionService
+	DonationService    services.DonationService
 }
 
 func Constructor(
 	userService services.UserService,
+	transactionService services.TransactionService,
 	donationService services.DonationService,
 ) UserController {
 	return UserController{
-		UserService:     userService,
-		DonationService: donationService,
+		UserService:        userService,
+		TransactionService: transactionService,
+		DonationService:    donationService,
 	}
 }
 
@@ -195,6 +198,7 @@ func (uc *UserController) Donation(c *gin.Context) {
 		return
 	}
 	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         true,
@@ -223,11 +227,37 @@ func (uc *UserController) Donation(c *gin.Context) {
 	})
 }
 
-func (uc *UserController) GetUser(ctx *gin.Context) {
-	ctx.JSON(200, "")
+func (uc *UserController) GetUserTransaction(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	_, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userId := c.Query("userID")
+	foundUser, err := uc.TransactionService.GetUserTransactionsByID(userId)
+	fmt.Println("foundUser", foundUser)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"error":         false,
+		"response code": 201,
+		"message":       "User transactions retrieved successfully",
+		"data":          foundUser,
+	})
+
 }
 
-func (uc *UserController) GetAllUsers(ctx *gin.Context) {
+func (uc *UserController) GetUser(ctx *gin.Context) {
 	ctx.JSON(200, "")
 }
 
@@ -238,6 +268,10 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 	userRoute.POST("/donate",
 		middleware.Authentication,
 		uc.Donation,
+	)
+	userRoute.GET("/transactions/",
+		middleware.Authentication,
+		uc.GetUserTransaction,
 	)
 
 	// userRoute.POST("/create", uc.CreateUser)

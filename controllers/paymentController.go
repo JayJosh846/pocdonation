@@ -1,6 +1,7 @@
 package controllers
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"strconv"
@@ -14,6 +15,7 @@ import (
 	"github.com/JayJosh846/donationPlatform/services"
 	helper "github.com/JayJosh846/donationPlatform/utils"
 	"github.com/go-playground/validator/v10"
+	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 
 	"github.com/gin-gonic/gin"
@@ -68,6 +70,9 @@ func PaymentConstructor(
 var ValidatePaymentBody = validator.New()
 
 func (pc *PaymentController) Payin(c *gin.Context) {
+	var ct, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+
 	var (
 		paymentRequest  PaymentRequest
 		paymentResponse PaymentResponse
@@ -122,6 +127,9 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 	}
 	createTrans.ID = primitive.NewObjectID()
 	createTrans.Reference = &paymentResponse.Data.Reference
+	createTrans.Donor_Email = &paymentRequest.Donor_Email
+	createTrans.User_ID = foundUser.User_ID
+	createTrans.User_Full_name = foundUser.Fullname
 	createTrans.Amount = paymentRequest.Amount
 	createTrans.Status = "pending"
 	createErr := pc.TransactionService.CreateTransaction(&createTrans)
@@ -134,19 +142,22 @@ func (pc *PaymentController) Payin(c *gin.Context) {
 		})
 		return
 	}
-	availableDonor, donorErr := pc.UserService.GetUser(&paymentRequest.Donor_Email)
-	if donorErr != nil {
-		c.JSON(http.StatusNotFound, gin.H{"error": "donorErr.Error()"})
+	count, err := UserCollection.CountDocuments(ct, bson.M{"email": paymentRequest.Donor_Email})
+	if err != nil {
+		log.Panic(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
 	}
-	fmt.Println("availableDonor", availableDonor)
-	if availableDonor != (&models.User{}) {
+	if count > 0 {
 		c.JSON(http.StatusFound, gin.H{
 			"error":         false,
 			"response code": 200,
 			"message":       "Payment link generated successfully",
 			"data":          paymentResponse,
 		})
+		return
 	}
+
 	userName, err := helper.ExtractUsernameFromEmail(paymentRequest.Donor_Email)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err})

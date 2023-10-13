@@ -12,7 +12,11 @@ import (
 
 type TransactionService interface {
 	CreateTransaction(*models.Transaction) error
-	GetTransaction(*string) (*models.Transaction, error)
+	GetUserTransactionsByID(string) ([]*models.Transaction, error)
+	GetTransactionByID(primitive.ObjectID) (*models.Transaction, error)
+	GetSuccessfulTransactionCount() (int64, error)
+	GetFailureTransactionCount() (int64, error)
+	GetTransactions() ([]*models.Transaction, error)
 	UpdateTransactionStatus(*string) error
 }
 
@@ -33,13 +37,59 @@ func (u *TransactionServiceImpl) CreateTransaction(transaction *models.Transacti
 	return err
 }
 
-func (u *TransactionServiceImpl) GetTransaction(reference *string) (*models.Transaction, error) {
+func (u *TransactionServiceImpl) GetTransactionByID(id primitive.ObjectID) (*models.Transaction, error) {
 	var transaction *models.Transaction
-	query := bson.M{"reference": reference}
+	query := bson.M{"_id": id}
 	err := u.transactionCollection.FindOne(u.ctx, query).Decode(&transaction)
 	return transaction, err
 }
 
+func (u *TransactionServiceImpl) GetUserTransactionsByID(id string) ([]*models.Transaction, error) {
+	var transactions []*models.Transaction
+	query := bson.M{"user_id": id}
+	cursor, err := u.transactionCollection.Find(u.ctx, query)
+	defer cursor.Close(u.ctx)
+
+	for cursor.Next(u.ctx) {
+		var transaction *models.Transaction
+		if err := cursor.Decode(&transaction); err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, transaction)
+	}
+	return transactions, err
+}
+
+func (u *TransactionServiceImpl) GetTransactions() ([]*models.Transaction, error) {
+	var transactions []*models.Transaction
+	query := bson.M{}
+	cursor, err := u.transactionCollection.Find(u.ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(u.ctx)
+
+	for cursor.Next(u.ctx) {
+		var transaction *models.Transaction
+		if err := cursor.Decode(&transaction); err != nil {
+			return nil, err
+		}
+		transactions = append(transactions, transaction)
+	}
+	return transactions, err
+}
+
+func (u *TransactionServiceImpl) GetSuccessfulTransactionCount() (int64, error) {
+	query := bson.M{"status": "complete"}
+	count, err := u.transactionCollection.CountDocuments(u.ctx, query)
+	return count, err
+}
+
+func (u *TransactionServiceImpl) GetFailureTransactionCount() (int64, error) {
+	query := bson.M{"status": "failed"}
+	count, err := u.transactionCollection.CountDocuments(u.ctx, query)
+	return count, err
+}
 func (u *TransactionServiceImpl) UpdateTransactionStatus(transaction *string) error {
 	filter := bson.D{primitive.E{Key: "reference", Value: transaction}}
 	update := bson.D{

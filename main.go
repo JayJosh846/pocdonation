@@ -20,6 +20,7 @@ var (
 	ts           services.TransactionService
 	uc           controllers.UserController
 	pc           controllers.PaymentController
+	ac           controllers.AdminController
 	ctx          context.Context
 	userc        *mongo.Collection
 	paymentc     *mongo.Collection
@@ -38,8 +39,9 @@ func init() {
 	ps = services.PaymentConstructor(paymentc, ctx)
 	ts = services.TransactionConstructor(transactionc, ctx)
 	ds = services.DonationConstructor(donationc, ctx)
-	uc = controllers.Constructor(us, ds)
+	uc = controllers.Constructor(us, ts, ds)
 	pc = controllers.PaymentConstructor(ps, us, ts, ds)
+	ac = controllers.AdminConstructor(us, ts, ds)
 
 	server = gin.Default()
 }
@@ -51,7 +53,8 @@ func main() {
 	server = gin.Default()
 	basepath := server.Group("/api/v1")
 	uc.UserRoutes(basepath)
+	ac.AdminRoute(basepath)
 	pc.PaymentRoute(basepath)
 
-	log.Fatal(server.Run(":5000"))
+	log.Fatal(server.Run(":9000"))
 }

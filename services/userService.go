@@ -12,7 +12,10 @@ import (
 
 type UserService interface {
 	CreateUser(*models.User) error
+	GetUserByID(string) (*models.User, error)
 	GetUser(*string) (*models.User, error)
+	GetUserCount() (int64, error)
+	GetAdmin(*string) (*models.User, error)
 	GetAllUsers() ([]*models.User, error)
 	UpdateUserBalance(*models.User, int) error
 }
@@ -37,6 +40,26 @@ func (u *UserServiceImpl) CreateUser(user *models.User) error {
 func (u *UserServiceImpl) GetUser(email *string) (*models.User, error) {
 	var user *models.User
 	query := bson.M{"email": email}
+	err := u.userCollection.FindOne(u.ctx, query).Decode(&user)
+	return user, err
+}
+
+func (u *UserServiceImpl) GetUserByID(id string) (*models.User, error) {
+	var user *models.User
+	query := bson.M{"user_id": id}
+	err := u.userCollection.FindOne(u.ctx, query).Decode(&user)
+	return user, err
+}
+
+func (u *UserServiceImpl) GetUserCount() (int64, error) {
+	query := bson.M{}
+	count, err := u.userCollection.CountDocuments(u.ctx, query)
+	return count, err
+}
+
+func (u *UserServiceImpl) GetAdmin(email *string) (*models.User, error) {
+	var user *models.User
+	query := bson.M{"email": email, "role": "admin"}
 	err := u.userCollection.FindOne(u.ctx, query).Decode(&user)
 	return user, err
 }
