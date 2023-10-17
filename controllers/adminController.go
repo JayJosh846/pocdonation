@@ -225,6 +225,10 @@ func (ac *AdminController) AdminRoute(rg *gin.RouterGroup) {
 		middleware.Authentication,
 		ac.GetAllTransactions,
 	)
+	adminRoute.GET("/transaction",
+		middleware.Authentication,
+		ac.GetTransactionsById,
+	)
 	adminRoute.GET("/no-of-users",
 		middleware.Authentication,
 		ac.GetAllUsersCount,

@@ -235,7 +235,7 @@ func (uc *UserController) GetUserTransaction(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 		return
 	}
-	userId := c.Query("userID")
+	userId := c.Query("id")
 	foundUser, err := uc.TransactionService.GetUserTransactionsByID(userId)
 	fmt.Println("foundUser", foundUser)
 	defer cancel()
@@ -262,8 +262,8 @@ func (uc *UserController) GetUser(ctx *gin.Context) {
 }
 
 func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
-	userRoute := rg.Group("/users")
-	userRoute.POST("/sign-up", uc.Signup)
+	userRoute := rg.Group("/user")
+	userRoute.POST("/signup", uc.Signup)
 	userRoute.POST("/login", uc.Login)
 	userRoute.POST("/donate",
 		middleware.Authentication,
