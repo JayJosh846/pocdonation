@@ -18,6 +18,7 @@ var (
 	ps           services.PaymentService
 	ds           services.DonationService
 	ts           services.TransactionService
+	bs           services.BankService
 	uc           controllers.UserController
 	pc           controllers.PaymentController
 	ac           controllers.AdminController
@@ -26,6 +27,7 @@ var (
 	paymentc     *mongo.Collection
 	transactionc *mongo.Collection
 	donationc    *mongo.Collection
+	bankc        *mongo.Collection
 )
 
 func init() {
@@ -35,12 +37,14 @@ func init() {
 	paymentc = database.GetUserCollection(database.Client, "Users")
 	transactionc = database.GetUserCollection(database.Client, "Transactions")
 	donationc = database.GetUserCollection(database.Client, "Donations")
+	bankc = database.GetUserCollection(database.Client, "Banks")
 	us = services.Constructor(userc, ctx)
 	ps = services.PaymentConstructor(paymentc, ctx)
 	ts = services.TransactionConstructor(transactionc, ctx)
 	ds = services.DonationConstructor(donationc, ctx)
-	uc = controllers.Constructor(us, ts, ds)
-	pc = controllers.PaymentConstructor(ps, us, ts, ds)
+	bs = services.BankConstructor(bankc, ctx)
+	uc = controllers.Constructor(us, ts, ds, bs, ps)
+	pc = controllers.PaymentConstructor(ps, us, ts, ds, bs)
 	ac = controllers.AdminConstructor(us, ts, ds)
 
 	server = gin.Default()

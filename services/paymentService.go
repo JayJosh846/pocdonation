@@ -21,6 +21,10 @@ type PaymentService interface {
 	Payin(amount string, user models.User) (string, error)
 	PaymentGetUser(*string) (*models.User, error)
 	VerifyDeposit(eventData []byte) (WebhookPayload, error)
+	GetBanks() (string, error)
+	VerifyAccountNumber(string, string) (string, error)
+	TransferRecipientCreation(string, string, string) (string, error)
+	InitiateTransfer(int, string) (string, error)
 }
 
 type PaymentServiceImpl struct {
@@ -28,20 +32,19 @@ type PaymentServiceImpl struct {
 	ctx               context.Context
 }
 
+func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context) PaymentService {
+	return &PaymentServiceImpl{
+		paymentCollection: paymentCollection,
+		ctx:               ctx,
+	}
+}
+
 type PaymentRequest struct {
-	Amount string `json:"amount"`
-	Email  string `json:"email"`
-	// RedirectURL    string   `json:"redirect_url"`
+	Amount    string   `json:"amount"`
+	Email     string   `json:"email"`
 	Currency  string   `json:"currency"`
 	Reference string   `json:"reference"`
 	Channels  []string `json:"channels"`
-	// DefaultChannel string   `json:"default_channel"`
-	// Customer       struct {
-	// 	Name  *string `json:"name"`
-	// 	Email *string `json:"email"`
-	// } `json:"customer"`
-	// NotificationURL string `json:"notification_url"`
-	// Metadata        map[string]string `json:"metadata"`
 }
 
 type WebhookPayload struct {
@@ -51,21 +54,30 @@ type WebhookPayload struct {
 		Currency  string `json:"currency"`
 		Amount    int    `json:"amount"`
 		Channel   string `json:"channel"`
-		// Fee               string `json:"fee"`
-		Status   string `json:"status"`
-		Customer struct {
+		Status    string `json:"status"`
+		Customer  struct {
 			Email string `json:"email"`
 		} `json:"customer"`
-		// Payment_method    string `json:"payment_method"`
-		// Payment_reference string `json:"payment_reference"`
 	} `json:"data"`
 }
 
-func PaymentConstructor(paymentCollection *mongo.Collection, ctx context.Context) PaymentService {
-	return &PaymentServiceImpl{
-		paymentCollection: paymentCollection,
-		ctx:               ctx,
-	}
+type Bank struct {
+	Name string `json:"name"`
+	Code string `json:"code"`
+}
+
+type RecipientCreationRequest struct {
+	Type           string `json:"type"`
+	Name           string `json:"name"`
+	Account_number string `json:"account_number"`
+	Bank_code      string `json:"bank_code"`
+	Currency       string `json:"currency"`
+}
+
+type TransferRequest struct {
+	Source         string `json:"source"`
+	Amount         int    `json:"amount"`
+	Recipient_code string `json:"recipient"`
 }
 
 func (u *PaymentServiceImpl) PaymentGetUser(email *string) (*models.User, error) {
@@ -83,8 +95,6 @@ func (u *PaymentServiceImpl) Payin(amount string, user models.User) (string, err
 	url := "https://api.paystack.co/transaction/initialize"
 	method := "POST"
 
-	fmt.Println("user from paymentservice", *user.Email)
-
 	reference := helper.GenerateTransactionReference()
 	paymentRequest := PaymentRequest{
 		Amount:    amount,
@@ -92,15 +102,6 @@ func (u *PaymentServiceImpl) Payin(amount string, user models.User) (string, err
 		Currency:  "NGN",
 		Reference: reference,
 		Channels:  []string{"card", "bank", "ussd", "mobile_money", "qr", "bank_transfer"},
-		// DefaultChannel: "card",
-		// Customer: struct {
-		// 	Name  *string `json:"name"`
-		// 	Email *string `json:"email"`
-		// }{
-		// 	Name:  user.Fullname,
-		// 	Email: user.Email,
-		// },
-		// NotificationURL: "https://2764-41-217-1-238.ngrok-free.app/api/v1/payment/confirmation",
 	}
 	requestBodyJSON, err := json.Marshal(paymentRequest)
 	if err != nil {
@@ -143,4 +144,194 @@ func (u *PaymentServiceImpl) VerifyDeposit(eventData []byte) (WebhookPayload, er
 	}
 	fmt.Println("Payload:", webhookPayload)
 	return webhookPayload, nil
+}
+
+func (u *PaymentServiceImpl) GetBanks() (string, error) {
+	secKey := os.Getenv("PAYSTACK_SEC_KEY")
+	token := secKey
+	url := "https://api.paystack.co/bank"
+	method := "GET"
+
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, nil)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer "+token)
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+	defer res.Body.Close()
+	// Read the response body
+	responseBody, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println("Error reading response:", err)
+		return "", err
+	}
+	return string(responseBody), nil
+
+}
+
+func (u *PaymentServiceImpl) VerifyAccountNumber(accountNumber string, bank string) (string, error) {
+	secKey := os.Getenv("PAYSTACK_SEC_KEY")
+	token := secKey
+	method := "GET"
+	// Retrieve the list of banks as a JSON string
+	jsonString, err := u.GetBanks()
+	if err != nil {
+		return "", err
+	}
+	var bankData struct {
+		Data []Bank `json:"data"`
+	}
+	errr := json.Unmarshal([]byte(jsonString), &bankData)
+	if errr != nil {
+		fmt.Println("Error unmarshaling JSON:", err)
+		return "", err
+	}
+
+	// Extract the slice of Bank structs
+	banks := bankData.Data
+	for _, b := range banks {
+		if bank == b.Name {
+			url := fmt.Sprintf("https://api.paystack.co/bank/resolve?account_number=%s&bank_code=%s", accountNumber, b.Code)
+			client := &http.Client{}
+			req, err := http.NewRequest(method, url, nil)
+			if err != nil {
+				return "", err
+			}
+			// Add the authorization header
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Add("Authorization", "Bearer "+token)
+			// Send the request
+			resp, err := client.Do(req)
+			if err != nil {
+				return "", err
+			}
+			defer resp.Body.Close()
+			responseBody, err := io.ReadAll(resp.Body)
+			if err != nil {
+				fmt.Println("Error reading response:", err)
+				return "", err
+			}
+			fmt.Println("responseBody", string(responseBody))
+			return string(responseBody), nil
+		}
+	}
+
+	return "", fmt.Errorf("Bank not found in the bank list")
+}
+
+func (u *PaymentServiceImpl) TransferRecipientCreation(username string, accountNumber string, bank string) (string, error) {
+	secKey := os.Getenv("PAYSTACK_SEC_KEY")
+	token := secKey
+	url := "https://api.paystack.co/transferrecipient"
+	method := "POST"
+	// Retrieve the list of banks as a JSON string
+	jsonString, err := u.GetBanks()
+	if err != nil {
+		return "", err
+	}
+	var bankData struct {
+		Data []Bank `json:"data"`
+	}
+	errr := json.Unmarshal([]byte(jsonString), &bankData)
+	if errr != nil {
+		fmt.Println("Error unmarshaling JSON:", err)
+		return "", err
+	}
+
+	// Extract the slice of Bank structs
+	banks := bankData.Data
+	for _, b := range banks {
+		if bank == b.Name {
+			transferRecipient := RecipientCreationRequest{
+				Type:           "nuban",
+				Name:           username,
+				Account_number: accountNumber,
+				Bank_code:      b.Code,
+				Currency:       "NGN",
+			}
+			requestBodyJSON, err := json.Marshal(transferRecipient)
+			if err != nil {
+				fmt.Println("Error marshaling JSON:", err)
+				return "", err
+			}
+			bodyReader := bytes.NewReader([]byte(requestBodyJSON))
+			client := &http.Client{}
+			req, err := http.NewRequest(method, url, bodyReader)
+			if err != nil {
+				fmt.Println(err)
+				return "", err
+			}
+			req.Header.Set("Content-Type", "application/json")
+			req.Header.Add("Authorization", "Bearer "+token)
+
+			res, err := client.Do(req)
+			if err != nil {
+				fmt.Println(err)
+				return "", err
+			}
+			defer res.Body.Close()
+
+			body, err := io.ReadAll(res.Body)
+			if err != nil {
+				fmt.Println(err)
+				return "", err
+
+			}
+			fmt.Println("ctx", u.ctx)
+			return string(body), nil
+		}
+	}
+	return "", fmt.Errorf("Something went wrong while creating reciept. Please try again")
+
+}
+
+func (u *PaymentServiceImpl) InitiateTransfer(amount int, recipientCode string) (string, error) {
+	secKey := os.Getenv("PAYSTACK_SEC_KEY")
+	token := secKey
+	url := "https://api.paystack.co/transfer"
+	method := "POST"
+
+	transferRequest := TransferRequest{
+		Source:         "balance",
+		Amount:         amount,
+		Recipient_code: recipientCode,
+	}
+	requestBodyJSON, err := json.Marshal(transferRequest)
+	if err != nil {
+		fmt.Println("Error marshaling JSON:", err)
+		return "", err
+	}
+	bodyReader := bytes.NewReader([]byte(requestBodyJSON))
+	client := &http.Client{}
+	req, err := http.NewRequest(method, url, bodyReader)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Add("Authorization", "Bearer "+token)
+
+	res, err := client.Do(req)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+	}
+	defer res.Body.Close()
+
+	body, err := io.ReadAll(res.Body)
+	if err != nil {
+		fmt.Println(err)
+		return "", err
+
+	}
+	fmt.Println("ctx", u.ctx)
+	return string(body), nil
 }

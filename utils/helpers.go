@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	mathrand "math/rand"
+	"strconv"
 	"strings"
 	"time"
 
@@ -74,4 +75,9 @@ func GenerateRandomPassword(length int) (string, error) {
 	password = password[:length]
 
 	return password, nil
+}
+
+func GenerateVerificationCode() string {
+	code := mathrand.Intn(900000) + 100000
+	return strconv.Itoa(code)
 }
