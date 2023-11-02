@@ -277,7 +277,7 @@ func (pc *PaymentController) GetBanks(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusFound, gin.H{
+	c.JSON(http.StatusOK, gin.H{
 		"error":         false,
 		"response code": 200,
 		"message":       "List of banks generated successfully",
@@ -416,6 +416,9 @@ func (pc *PaymentController) Payout(c *gin.Context) {
 
 func (pc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {
 	paymentRoute := rg.Group("/payment")
+	// {
+	// 	paymentRoute.Use(middleware.CORSMiddleware())
+
 	paymentRoute.POST("/payin", pc.Payin)
 	paymentRoute.GET("/banks", pc.GetBanks)
 	paymentRoute.POST("/confirmation",
@@ -425,4 +428,5 @@ func (pc *PaymentController) PaymentRoute(rg *gin.RouterGroup) {
 		middleware.Authentication,
 		pc.Payout,
 	)
+	// }
 }

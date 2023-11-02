@@ -7,6 +7,7 @@ import (
 	"github.com/JayJosh846/donationPlatform/controllers"
 	"github.com/JayJosh846/donationPlatform/database"
 	"github.com/JayJosh846/donationPlatform/services"
+	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"go.mongodb.org/mongo-driver/mongo"
 	// "go.mongodb.org/mongo-driver/mongo/readpref"
@@ -55,6 +56,21 @@ func main() {
 	defer database.CloseMongoDBConnection(client)
 
 	server = gin.Default()
+	// Define CORS configuration with specific allowed origins
+	corsConfig := cors.DefaultConfig()
+
+	// Allow specific origins
+	corsConfig.AllowAllOrigins = true
+
+	// To be able to send tokens to the server.
+	corsConfig.AllowCredentials = true
+
+	// OPTIONS method for ReactJS
+	corsConfig.AddAllowMethods("OPTIONS")
+
+	// Register the middleware
+	server.Use(cors.New(corsConfig))
+
 	basepath := server.Group("/api/v1")
 	uc.UserRoutes(basepath)
 	ac.AdminRoute(basepath)

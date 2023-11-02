@@ -14,10 +14,10 @@ import (
 )
 
 type Usererror struct {
-	Error        bool
-	ResponseCode int
-	Message      string
-	Data         string
+	Error        bool   `json:"error"`
+	ResponseCode int    `json:"response code"`
+	Message      string `json:"message"`
+	Data         string `json:"data"`
 }
 
 func HashPassword(password string) string {

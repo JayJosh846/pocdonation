@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -12,18 +13,19 @@ import (
 	"github.com/JayJosh846/donationPlatform/middleware"
 	"github.com/JayJosh846/donationPlatform/models"
 	"github.com/JayJosh846/donationPlatform/services"
-
 	generate "github.com/JayJosh846/donationPlatform/utils"
 	"github.com/gin-gonic/gin"
 	"github.com/go-playground/validator/v10"
 	"go.mongodb.org/mongo-driver/bson"
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
+	"go.mongodb.org/mongo-driver/mongo/gridfs"
 )
 
 var UserCollection *mongo.Collection = database.GetUserCollection(database.Client, "Users")
 var BankCollection *mongo.Collection = database.GetUserCollection(database.Client, "Banks")
 var OtpCollection *mongo.Collection = database.GetUserCollection(database.Client, "Otps")
+var db = database.GetDBInstance(database.Client)
 var Validate = validator.New()
 
 type UserController struct {
@@ -78,6 +80,37 @@ type VerificationCodeRequest struct {
 
 type SelfieRequest struct {
 	Pic string `json:"pic"`
+}
+
+type BVNRequest struct {
+	Bvn string `json:"bvn"`
+}
+
+type LookUpBVNResponse struct {
+	Status int `json:"status"`
+}
+
+type VerifyBVNResponse struct {
+	Status  int                     `json:"status"`
+	Message string                  `json:"message"`
+	Data    VerifyBVNResponseEntity `json:"data"`
+}
+
+type VerifyBVNResponseEntity struct {
+	Entity VerifyBVNResponseBvn `json:"entity"`
+}
+
+type VerifyBVNResponseBvn struct {
+	Bvn VerifyBVNResponseData `json:"bvn"`
+}
+
+type VerifyBVNResponseData struct {
+	Status bool `json:"status"`
+}
+
+type KycFileTypeRequest struct {
+	Document_Type string `json:"document_type"`
+	Document      string `json:"document"`
 }
 
 func (uc *UserController) Signup(ctx *gin.Context) {
@@ -650,8 +683,229 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 	})
 
 }
+
+func (uc *UserController) UserProfile(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userStruct, ok := user.(middleware.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
+	}
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "User profile retrieved successfully",
+		"data":          foundUser,
+	})
+}
+
+func (uc *UserController) VerifyBVN(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	_, ok := user.(middleware.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
+	}
+
+	var (
+		bvnRequest    BVNRequest
+		verifyResonse VerifyBVNResponse
+	)
+
+	if err := c.BindJSON(&bvnRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	validationErr := Validate.Struct(bvnRequest)
+	if validationErr != nil {
+		fmt.Println(validationErr)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       validationErr.Error(),
+			"data":          "",
+		})
+		return
+	}
+	// bvnLookup, err := services.LookUpBVN(bvnRequest.Bvn)
+	// if err != nil {
+	// 	c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+	// 	return
+	// }
+	// e := json.Unmarshal([]byte(bvnLookup), &lookUpBvn)
+	// if e != nil {
+	// 	log.Println("Error:", e)
+	// 	return
+	// }
+	// if lookUpBvn.Status != 200 {
+	// 	c.JSON(http.StatusNotFound, gin.H{
+	// 		"error":         true,
+	// 		"response code": 400,
+	// 		"message":       "Invalid BVN entered",
+	// 		"data":          "",
+	// 	})
+	// 	return
+	// }
+
+	bvnVerify, err := services.VerifyBVN(bvnRequest.Bvn)
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
+		return
+	}
+	er := json.Unmarshal([]byte(bvnVerify), &verifyResonse)
+	if er != nil {
+		log.Println("Error:", er)
+		return
+	}
+	if !verifyResonse.Data.Entity.Bvn.Status {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "Could not verify BVN. Please try again",
+			"data":          "",
+		})
+		return
+	}
+
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "BVN verified successfully",
+		"data":          "",
+	})
+
+}
+
+func (uc *UserController) KycFileUpload(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userStruct, ok := user.(middleware.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
+	}
+
+	var (
+		kycFileTypeRequest KycFileTypeRequest
+		r                  *http.Request
+		// w                  http.ResponseWriter
+	)
+
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	file, header, err := r.FormFile("document")
+	if err != nil {
+		fmt.Println("err", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	defer file.Close()
+
+	if file == nil || header == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get a GridFS bucket
+	fs, err := gridfs.NewBucket(db)
+	if err != nil {
+		fmt.Println("err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create an upload stream with some options and upload the file
+	uploadStream, err := fs.OpenUploadStream(header.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer uploadStream.Close()
+
+	// Copy the file data to GridFS
+	if _, err = io.Copy(uploadStream, file); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	if err := c.BindJSON(&kycFileTypeRequest); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	validationErr := Validate.Struct(kycFileTypeRequest)
+	if validationErr != nil {
+		fmt.Println(validationErr)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       validationErr.Error(),
+			"data":          "",
+		})
+		return
+	}
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+
+	updateDocs := uc.UserService.UpdateUserKYCStatus(foundUser.User_ID, kycFileTypeRequest.Document_Type)
+	if updateDocs != nil {
+		c.JSON(http.StatusFound, gin.H{
+			"error":         false,
+			"response code": 200,
+			"message":       "Something went wrong while updating user email",
+			"data":          updateDocs,
+		})
+		return
+	}
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "User profile updated successfully",
+		"data":          "",
+	})
+
+}
+
 func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 	userRoute := rg.Group("/user")
+	// {
+	// 	userRoute.Use(middleware.CORSMiddleware())
+
 	userRoute.POST("/signup", uc.Signup)
 	userRoute.POST("/login", uc.Login)
 	userRoute.POST("/donate",
@@ -685,5 +939,20 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 		uc.Userselfie,
 	)
 
+	userRoute.POST("/verify-bvn",
+		middleware.Authentication,
+		uc.VerifyBVN,
+	)
+
+	userRoute.POST("/file-upload",
+		middleware.Authentication,
+		uc.KycFileUpload,
+	)
+	userRoute.GET("profile",
+		middleware.Authentication,
+		uc.UserProfile,
+	)
+
 	// userRoute.POST("/create", uc.CreateUser)
+	// }
 }

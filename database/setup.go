@@ -50,6 +50,11 @@ func GetUserCollection(client *mongo.Client, collectionName string) *mongo.Colle
 	return collection
 }
 
+func GetDBInstance(client *mongo.Client) *mongo.Database {
+	database := client.Database("Pocdonation")
+	return database
+}
+
 func CloseMongoDBConnection(client *mongo.Client) {
 	if client != nil {
 		client.Disconnect(context.Background())

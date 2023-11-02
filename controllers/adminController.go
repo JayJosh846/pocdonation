@@ -220,6 +220,9 @@ func (ac *AdminController) GetFailureTransactionsCount(c *gin.Context) {
 
 func (ac *AdminController) AdminRoute(rg *gin.RouterGroup) {
 	adminRoute := rg.Group("/admin")
+	// {
+	// 	adminRoute.Use(middleware.CORSMiddleware())
+
 	adminRoute.POST("/login", ac.AdminLogin)
 	adminRoute.GET("/transactions",
 		middleware.Authentication,
@@ -241,4 +244,5 @@ func (ac *AdminController) AdminRoute(rg *gin.RouterGroup) {
 		middleware.Authentication,
 		ac.GetFailureTransactionsCount,
 	)
+	// }
 }

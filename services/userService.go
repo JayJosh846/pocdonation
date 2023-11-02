@@ -26,6 +26,7 @@ type UserService interface {
 	UpdateUserEmailPhone(string, string, string) error
 	UpdateUserEmailStatus(string) error
 	UpdateUserPicture(string, string) error
+	UpdateUserKYCStatus(string, string) error
 }
 
 type UserServiceImpl struct {
@@ -175,6 +176,22 @@ func (u *UserServiceImpl) UpdateUserPicture(id, picture string) error {
 			Value: bson.D{
 				primitive.E{Key: "profile_picture", Value: picture},
 			},
+		},
+	}
+	result, _ := u.userCollection.UpdateOne(u.ctx, filter, update)
+	if result.MatchedCount != 1 {
+		return errors.New("no matched document found for update")
+	}
+	return nil
+}
+
+func (u *UserServiceImpl) UpdateUserKYCStatus(id, document string) error {
+	filter := bson.M{"user_id": id}
+
+	update := bson.M{
+		"$set": bson.M{
+			"identification": document,
+			"kyc_status":     true,
 		},
 	}
 	result, _ := u.userCollection.UpdateOne(u.ctx, filter, update)
