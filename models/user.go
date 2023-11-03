@@ -80,3 +80,14 @@ type Otp struct {
 	Token      string    `json:"token"`
 	Expires_At time.Time `json:"expires_at"`
 }
+
+type KYC struct {
+	ID         primitive.ObjectID `bson:"_id"`
+	User_ID    string             `json:"user_id"`
+	Kyc_Image  *string            `json:"kyc_image" bson:"kyc_image"`
+	Kyc_Docs   *string            `json:"kyc_docs" bson:"kyc_docs"`
+	Tier       int                `json:"tier" bson:"tier"`
+	Status     string             `json:"status" bson:"status"`
+	Created_At time.Time          `json:"created_at"`
+	Updated_At time.Time          `json:"updated_at"`
+}

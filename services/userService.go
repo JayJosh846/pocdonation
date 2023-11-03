@@ -27,6 +27,7 @@ type UserService interface {
 	UpdateUserEmailStatus(string) error
 	UpdateUserPicture(string, string) error
 	UpdateUserKYCStatus(string, string) error
+	GetUserKycByID(string) (*models.KYC, error)
 }
 
 type UserServiceImpl struct {
@@ -42,6 +43,7 @@ func Constructor(userCollection *mongo.Collection, ctx context.Context) UserServ
 }
 
 var OTPCollection *mongo.Collection = database.GetUserCollection(database.Client, "Otps")
+var KycCollection *mongo.Collection = database.GetUserCollection(database.Client, "Kycs")
 
 func (u *UserServiceImpl) CreateUser(user *models.User) error {
 	_, err := u.userCollection.InsertOne(u.ctx, user)
@@ -199,6 +201,13 @@ func (u *UserServiceImpl) UpdateUserKYCStatus(id, document string) error {
 		return errors.New("no matched document found for update")
 	}
 	return nil
+}
+
+func (u *UserServiceImpl) GetUserKycByID(id string) (*models.KYC, error) {
+	var kyc *models.KYC
+	query := bson.M{"user_id": id}
+	err := KycCollection.FindOne(u.ctx, query).Decode(&kyc)
+	return kyc, err
 }
 
 func (u *UserServiceImpl) GetAllUsers() ([]*models.User, error) {

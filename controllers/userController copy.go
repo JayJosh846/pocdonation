@@ -25,6 +25,7 @@ import (
 var UserCollection *mongo.Collection = database.GetUserCollection(database.Client, "Users")
 var BankCollection *mongo.Collection = database.GetUserCollection(database.Client, "Banks")
 var OtpCollection *mongo.Collection = database.GetUserCollection(database.Client, "Otps")
+var KycCollection *mongo.Collection = database.GetUserCollection(database.Client, "Kycs")
 var db = database.GetDBInstance(database.Client)
 var Validate = validator.New()
 
@@ -457,7 +458,7 @@ func (uc *UserController) GetBankDetails(c *gin.Context) {
 }
 
 func (uc *UserController) RequestEmailVerification(c *gin.Context) {
-	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
 	if !exists {
@@ -471,6 +472,7 @@ func (uc *UserController) RequestEmailVerification(c *gin.Context) {
 
 	var (
 		emailVerificationRequest EmailVerificationRequest
+		kyc                      models.KYC
 	)
 
 	if err := c.BindJSON(&emailVerificationRequest); err != nil {
@@ -500,6 +502,21 @@ func (uc *UserController) RequestEmailVerification(c *gin.Context) {
 		return
 	}
 
+	// count, err := UserCollection.CountDocuments(ctx, bson.M{"email": emailVerificationRequest.Email})
+	// if err != nil {
+	// 	log.Panic(err)
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+	// 	return
+	// }
+	// if count > 0 {
+	// 	c.JSON(http.StatusBadRequest, gin.H{
+	// 		"error":         true,
+	// 		"response code": 400,
+	// 		"message":       "User with this email exists",
+	// 		"data":          "",
+	// 	})
+	// 	return
+	// } else if count == 0 || emailVerificationRequest.Email == *foundUser.Email {
 	returnedOtp, err := uc.UserService.CreateEmailVerification(foundUser, emailVerificationRequest.Email)
 	defer cancel()
 	if err != nil {
@@ -522,12 +539,28 @@ func (uc *UserController) RequestEmailVerification(c *gin.Context) {
 		})
 		return
 	}
+	kyc.ID = primitive.NewObjectID()
+	kyc.User_ID = foundUser.User_ID
+	kyc.Tier = 1
+	kyc.Status = "ongoing"
+
+	_, kycErr := KycCollection.InsertOne(ctx, kyc)
+	if kycErr != nil {
+		c.JSON(http.StatusFound, gin.H{
+			"error":         false,
+			"response code": 200,
+			"message":       "Something went wrong while updating user kyc status",
+			"data":          kycErr,
+		})
+		return
+	}
 	c.JSON(http.StatusFound, gin.H{
 		"error":         false,
 		"response code": 200,
 		"message":       "OTP sent successfully",
 		"data":          returnedOtp,
 	})
+	// }
 }
 
 func (uc *UserController) EmailVerification(c *gin.Context) {
@@ -622,7 +655,7 @@ func (uc *UserController) EmailVerification(c *gin.Context) {
 }
 
 func (uc *UserController) Userselfie(c *gin.Context) {
-	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
 	if !exists {
@@ -634,23 +667,42 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
 
-	var (
-		selfieRequest SelfieRequest
-	)
+	// var (
+	// 	selfieRequest SelfieRequest
+	// )
 
-	if err := c.BindJSON(&selfieRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+	file, header, err := c.Request.FormFile("image")
+	if err != nil {
+		fmt.Println("err", err.Error())
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	validationErr := Validate.Struct(selfieRequest)
-	if validationErr != nil {
-		fmt.Println(validationErr)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":         true,
-			"response code": 400,
-			"message":       validationErr.Error(),
-			"data":          "",
-		})
+	defer file.Close()
+
+	if file == nil || header == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Get a GridFS bucket
+	fs, err := gridfs.NewBucket(db)
+	if err != nil {
+		fmt.Println("err", err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+
+	// Create an upload stream with some options and upload the file
+	uploadStream, err := fs.OpenUploadStream(header.Filename)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+		return
+	}
+	defer uploadStream.Close()
+
+	// Copy the file data to GridFS
+	if _, err = io.Copy(uploadStream, file); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
 	foundUser, err := uc.UserService.GetUser(userStruct.Email)
@@ -664,17 +716,36 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 		})
 		return
 	}
-
-	updatePic := uc.UserService.UpdateUserPicture(foundUser.User_ID, selfieRequest.Pic)
-	if updatePic != nil {
-		c.JSON(http.StatusFound, gin.H{
-			"error":         false,
-			"response code": 200,
-			"message":       "Something went wrong while updating user email",
-			"data":          updatePic,
+	filter := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
+	update := bson.D{
+		primitive.E{
+			Key: "$set",
+			Value: bson.D{
+				primitive.E{Key: "kyc_image", Value: header.Filename},
+			},
+		},
+	}
+	result, _ := KycCollection.UpdateOne(ctx, filter, update)
+	if result.MatchedCount != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "no matched document found for update",
+			"data":          "",
 		})
 		return
 	}
+
+	// updatePic := uc.UserService.UpdateUserPicture(foundUser.User_ID, selfieRequest.Pic)
+	// if updatePic != nil {
+	// 	c.JSON(http.StatusFound, gin.H{
+	// 		"error":         false,
+	// 		"response code": 200,
+	// 		"message":       "Something went wrong while updating user email",
+	// 		"data":          updatePic,
+	// 	})
+	// 	return
+	// }
 	c.JSON(http.StatusFound, gin.H{
 		"error":         false,
 		"response code": 200,
@@ -716,14 +787,14 @@ func (uc *UserController) UserProfile(c *gin.Context) {
 }
 
 func (uc *UserController) VerifyBVN(c *gin.Context) {
-	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
 	if !exists {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
 		return
 	}
-	_, ok := user.(middleware.User)
+	userStruct, ok := user.(middleware.User)
 	if !ok {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
@@ -788,6 +859,38 @@ func (uc *UserController) VerifyBVN(c *gin.Context) {
 		return
 	}
 
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+
+	filter := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
+	update := bson.D{
+		primitive.E{
+			Key: "$set",
+			Value: bson.D{
+				primitive.E{Key: "tier", Value: 2},
+			},
+		},
+	}
+	result, _ := KycCollection.UpdateOne(ctx, filter, update)
+	if result.MatchedCount != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "no matched document found for update",
+			"data":          "",
+		})
+		return
+	}
+
 	c.JSON(http.StatusFound, gin.H{
 		"error":         false,
 		"response code": 200,
@@ -798,7 +901,7 @@ func (uc *UserController) VerifyBVN(c *gin.Context) {
 }
 
 func (uc *UserController) KycFileUpload(c *gin.Context) {
-	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
 	if !exists {
@@ -812,22 +915,22 @@ func (uc *UserController) KycFileUpload(c *gin.Context) {
 
 	var (
 		kycFileTypeRequest KycFileTypeRequest
-		r                  *http.Request
+		// r                  *http.Request
 		// w                  http.ResponseWriter
 	)
 
-	if err := r.ParseMultipartForm(10 << 20); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
-		return
-	}
-	file, header, err := r.FormFile("document")
+	// if err := c.Request.ParseMultipartForm(10 << 20); err != nil {
+	// 	c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	// 	return
+	// }
+
+	file, header, err := c.Request.FormFile("document")
 	if err != nil {
 		fmt.Println("err", err.Error())
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	defer file.Close()
-
 	if file == nil || header == nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
@@ -854,22 +957,6 @@ func (uc *UserController) KycFileUpload(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
 		return
 	}
-
-	if err := c.BindJSON(&kycFileTypeRequest); err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": err})
-		return
-	}
-	validationErr := Validate.Struct(kycFileTypeRequest)
-	if validationErr != nil {
-		fmt.Println(validationErr)
-		c.JSON(http.StatusBadRequest, gin.H{
-			"error":         true,
-			"response code": 400,
-			"message":       validationErr.Error(),
-			"data":          "",
-		})
-		return
-	}
 	foundUser, err := uc.UserService.GetUser(userStruct.Email)
 	defer cancel()
 	if err != nil {
@@ -892,11 +979,59 @@ func (uc *UserController) KycFileUpload(c *gin.Context) {
 		})
 		return
 	}
-	c.JSON(http.StatusFound, gin.H{
+	filter := bson.M{"user_id": foundUser.User_ID}
+
+	update := bson.M{
+		"$set": bson.M{
+			"kyc_docs": header.Filename,
+			"tier":     3,
+			"status":   "complete",
+		},
+	}
+	result, _ := KycCollection.UpdateOne(ctx, filter, update)
+	if result.MatchedCount != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "no matched document found for update",
+			"data":          "",
+		})
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
 		"error":         false,
 		"response code": 200,
 		"message":       "User profile updated successfully",
 		"data":          "",
+	})
+
+}
+
+func (uc *UserController) GetKycDetails(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	_, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userId := c.Query("id")
+	foundKyc, err := uc.UserService.GetUserKycByID(userId)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+	c.JSON(http.StatusCreated, gin.H{
+		"error":         false,
+		"response code": 201,
+		"message":       "User kyc details retrieved successfully",
+		"data":          foundKyc,
 	})
 
 }
@@ -951,6 +1086,11 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 	userRoute.GET("profile",
 		middleware.Authentication,
 		uc.UserProfile,
+	)
+
+	userRoute.GET("/kyc-status",
+		middleware.Authentication,
+		uc.GetKycDetails,
 	)
 
 	// userRoute.POST("/create", uc.CreateUser)
