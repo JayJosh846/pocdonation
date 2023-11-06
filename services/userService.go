@@ -141,9 +141,9 @@ func (u *UserServiceImpl) UpdateUserEmailPhone(id, email, phone string) error {
 
 	update := bson.M{
 		"$set": bson.M{
-			"email_verified": true,
-			"email":          email,
-			"phone":          phone,
+			// "email_verified": true,
+			"email": email,
+			"phone": phone,
 		},
 	}
 	result, _ := u.userCollection.UpdateOne(u.ctx, filter, update)
@@ -194,6 +194,7 @@ func (u *UserServiceImpl) UpdateUserKYCStatus(id, document string) error {
 		"$set": bson.M{
 			"identification": document,
 			"kyc_status":     true,
+			"id_upload":      true,
 		},
 	}
 	result, _ := u.userCollection.UpdateOne(u.ctx, filter, update)

@@ -22,6 +22,9 @@ type User struct {
 	Balance         int                `json:"balance"`
 	Donations       bool               `json:"donations"`
 	Email_Verified  bool               `json:"email_verified"`
+	Selfie_Upload   bool               `json:"selfie_upload"`
+	Bvn_Verified    bool               `json:"bvn_verified"`
+	ID_Upload       bool               `json:"id_upload"`
 	Kyc_Status      bool               `json:"kyc_status"`
 	Link            *string            `json:"link"`
 	Profile_Picture *string            `json:"profile_picture"`
@@ -31,7 +34,7 @@ type User struct {
 	Created_At      time.Time          `json:"created_at"`
 	Updated_At      time.Time          `json:"updated_at"`
 	Transactions    []Transaction      `json:"transaction" bson:"transaction"`
-	Banks           []Bank             `json:"bank" bson:"bank"`
+	Banks           Bank               `json:"bank" bson:"bank"`
 	Social          Social             `json:"socials" bson:"socials"`
 }
 

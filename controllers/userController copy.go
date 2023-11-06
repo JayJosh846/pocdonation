@@ -181,6 +181,9 @@ func (uc *UserController) Signup(ctx *gin.Context) {
 	user.Link = &link
 	user.Role = "user"
 	user.Email_Verified = false
+	user.Selfie_Upload = false
+	user.Bvn_Verified = false
+	user.ID_Upload = false
 	user.Kyc_Status = false
 	user.Created_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
 	user.Updated_At, _ = time.Parse(time.RFC3339, time.Now().Format(time.RFC3339))
@@ -188,7 +191,6 @@ func (uc *UserController) Signup(ctx *gin.Context) {
 	user.Token = &token
 	user.Refresh_Token = &refreshtoken
 	user.Transactions = make([]models.Transaction, 0)
-	user.Banks = make([]models.Bank, 0)
 
 	createErr := uc.UserService.CreateUser(&user)
 	if createErr != nil {
@@ -209,7 +211,6 @@ func (uc *UserController) Login(ctx *gin.Context) {
 	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	var user models.User
-	// var founduser models.User
 	if err := ctx.BindJSON(&user); err != nil {
 		ctx.JSON(http.StatusBadRequest, gin.H{"error": err})
 		return
@@ -222,10 +223,18 @@ func (uc *UserController) Login(ctx *gin.Context) {
 			"error":         true,
 			"response code": 400,
 			"message":       "Account does not exist",
-			"data":          "",
+			"data":          err,
 		})
 		return
 	}
+
+	var bank models.Bank
+	query := bson.M{"user_id": foundUser.User_ID}
+	er := BankCollection.FindOne(ctx, query).Decode(&bank)
+	if er != nil {
+		fmt.Println("Bank details not found for user:", foundUser.User_ID)
+	}
+	foundUser.Banks = bank
 	PasswordIsValid, msg := generate.VerifyPassword(*user.Password, *foundUser.Password)
 	defer cancel()
 	if !PasswordIsValid {
@@ -443,7 +452,7 @@ func (uc *UserController) GetBankDetails(c *gin.Context) {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error":         true,
 			"response code": 400,
-			"message":       "User does not exist",
+			"message":       "User bank not found",
 			"data":          "",
 		})
 		return
@@ -716,6 +725,26 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 		})
 		return
 	}
+	filterUser := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
+	updateUser := bson.D{
+		primitive.E{
+			Key: "$set",
+			Value: bson.D{
+				primitive.E{Key: "selfie_upload", Value: true},
+			},
+		},
+	}
+	resultUser, _ := UserCollection.UpdateOne(ctx, filterUser, updateUser)
+	if resultUser.MatchedCount != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "no matched document found for update",
+			"data":          "",
+		})
+		return
+	}
+
 	filter := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
 	update := bson.D{
 		primitive.E{
@@ -871,6 +900,26 @@ func (uc *UserController) VerifyBVN(c *gin.Context) {
 		return
 	}
 
+	filterUser := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
+	updateUser := bson.D{
+		primitive.E{
+			Key: "$set",
+			Value: bson.D{
+				primitive.E{Key: "bvn_verified", Value: true},
+			},
+		},
+	}
+	resultUser, _ := UserCollection.UpdateOne(ctx, filterUser, updateUser)
+	if resultUser.MatchedCount != 1 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "no matched document found for update",
+			"data":          "",
+		})
+		return
+	}
+
 	filter := bson.D{primitive.E{Key: "user_id", Value: foundUser.User_ID}}
 	update := bson.D{
 		primitive.E{
@@ -979,6 +1028,7 @@ func (uc *UserController) KycFileUpload(c *gin.Context) {
 		})
 		return
 	}
+
 	filter := bson.M{"user_id": foundUser.User_ID}
 
 	update := bson.M{
