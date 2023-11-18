@@ -20,7 +20,6 @@ type UserService interface {
 	GetUser(*string) (*models.User, error)
 	GetUserCount() (int64, error)
 	GetAdmin(*string) (*models.User, error)
-	GetAllUsers() ([]*models.User, error)
 	UpdateUserBalance(*models.User, int, string) error
 	CreateEmailVerification(*models.User, string) (*models.Otp, error)
 	UpdateUserEmailPhone(string, string, string) error
@@ -28,6 +27,11 @@ type UserService interface {
 	UpdateUserPicture(string, string) error
 	UpdateUserKYCStatus(string, string) error
 	GetUserKycByID(string) (*models.KYC, error)
+	GetUserSocialsByID(string) (*models.Social, error)
+	GetUserDonationsByID(string) ([]*models.Donation, error)
+	CreateSocial(*models.Social) error
+	GetAllUsers() ([]*models.User, error)
+	GetAllKycUsers() ([]*models.User, error)
 }
 
 type UserServiceImpl struct {
@@ -44,6 +48,8 @@ func Constructor(userCollection *mongo.Collection, ctx context.Context) UserServ
 
 var OTPCollection *mongo.Collection = database.GetUserCollection(database.Client, "Otps")
 var KycCollection *mongo.Collection = database.GetUserCollection(database.Client, "Kycs")
+var SocialCollection *mongo.Collection = database.GetUserCollection(database.Client, "Socials")
+var DonationCollection *mongo.Collection = database.GetUserCollection(database.Client, "Donations")
 
 func (u *UserServiceImpl) CreateUser(user *models.User) error {
 	_, err := u.userCollection.InsertOne(u.ctx, user)
@@ -211,6 +217,71 @@ func (u *UserServiceImpl) GetUserKycByID(id string) (*models.KYC, error) {
 	return kyc, err
 }
 
+func (u *UserServiceImpl) GetUserSocialsByID(id string) (*models.Social, error) {
+	var social *models.Social
+	query := bson.M{"user_id": id}
+	err := SocialCollection.FindOne(u.ctx, query).Decode(&social)
+	return social, err
+}
+
+func (u *UserServiceImpl) GetUserDonationsByID(id string) ([]*models.Donation, error) {
+	var donations []*models.Donation
+	query := bson.M{"user_id": id}
+	cursor, err := DonationCollection.Find(u.ctx, query)
+	defer cursor.Close(u.ctx)
+
+	for cursor.Next(u.ctx) {
+		var donation *models.Donation
+		if err := cursor.Decode(&donation); err != nil {
+			return nil, err
+		}
+		donations = append(donations, donation)
+	}
+	return donations, err
+}
+
+func (u *UserServiceImpl) CreateSocial(social *models.Social) error {
+	_, err := SocialCollection.InsertOne(u.ctx, social)
+	return err
+}
+
 func (u *UserServiceImpl) GetAllUsers() ([]*models.User, error) {
-	return nil, nil
+	var users []*models.User
+	query := bson.M{"role": "user"}
+	cursor, err := u.userCollection.Find(u.ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(u.ctx)
+
+	for cursor.Next(u.ctx) {
+		var user *models.User
+		if err := cursor.Decode(&user); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, err
+}
+
+func (u *UserServiceImpl) GetAllKycUsers() ([]*models.User, error) {
+	var users []*models.User
+	query := bson.M{
+		"role":       "user",
+		"kyc_status": true,
+	}
+	cursor, err := u.userCollection.Find(u.ctx, query)
+	if err != nil {
+		return nil, err
+	}
+	defer cursor.Close(u.ctx)
+
+	for cursor.Next(u.ctx) {
+		var user *models.User
+		if err := cursor.Decode(&user); err != nil {
+			return nil, err
+		}
+		users = append(users, user)
+	}
+	return users, err
 }

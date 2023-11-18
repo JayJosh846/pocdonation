@@ -23,7 +23,12 @@ func Authentication(c *gin.Context) {
 	}
 	claims, msg, err := token.ValidateToken(ClientToken)
 	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": msg})
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":         true,
+			"response code": 401,
+			"message":       msg,
+			"data":          "",
+		})
 		c.Abort()
 		return
 	}

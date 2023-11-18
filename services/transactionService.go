@@ -14,6 +14,7 @@ type TransactionService interface {
 	CreateTransaction(*models.Transaction) error
 	GetUserTransactionsByID(string) ([]*models.Transaction, error)
 	GetTransactionByID(primitive.ObjectID) (*models.Transaction, error)
+	GetTransactionCount() (int64, error)
 	GetSuccessfulTransactionCount() (int64, error)
 	GetFailureTransactionCount() (int64, error)
 	GetTransactions() ([]*models.Transaction, error)
@@ -77,6 +78,12 @@ func (u *TransactionServiceImpl) GetTransactions() ([]*models.Transaction, error
 		transactions = append(transactions, transaction)
 	}
 	return transactions, err
+}
+
+func (u *TransactionServiceImpl) GetTransactionCount() (int64, error) {
+	query := bson.M{}
+	count, err := u.transactionCollection.CountDocuments(u.ctx, query)
+	return count, err
 }
 
 func (u *TransactionServiceImpl) GetSuccessfulTransactionCount() (int64, error) {

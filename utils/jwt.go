@@ -33,6 +33,8 @@ func TokenGenerator(uid string, email string) (signedtoken string, signedrefresh
 		},
 	}
 	refreshclaims := &SignedDetails{
+		Id:    uid,
+		Email: email,
 		StandardClaims: jwt.StandardClaims{
 			ExpiresAt: time.Now().Local().Add(time.Hour * time.Duration(168)).Unix(),
 		},

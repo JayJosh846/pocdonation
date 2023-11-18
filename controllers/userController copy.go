@@ -2,13 +2,18 @@ package controllers
 
 import (
 	"context"
+	// "encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+
+	"net/url"
+
 	"time"
 
+	"cloud.google.com/go/storage"
 	"github.com/JayJosh846/donationPlatform/database"
 	"github.com/JayJosh846/donationPlatform/middleware"
 	"github.com/JayJosh846/donationPlatform/models"
@@ -20,12 +25,16 @@ import (
 	"go.mongodb.org/mongo-driver/bson/primitive"
 	"go.mongodb.org/mongo-driver/mongo"
 	"go.mongodb.org/mongo-driver/mongo/gridfs"
+	"google.golang.org/api/option"
+	"google.golang.org/appengine"
 )
 
 var UserCollection *mongo.Collection = database.GetUserCollection(database.Client, "Users")
 var BankCollection *mongo.Collection = database.GetUserCollection(database.Client, "Banks")
 var OtpCollection *mongo.Collection = database.GetUserCollection(database.Client, "Otps")
 var KycCollection *mongo.Collection = database.GetUserCollection(database.Client, "Kycs")
+var SocialCollection *mongo.Collection = database.GetUserCollection(database.Client, "Socials")
+
 var db = database.GetDBInstance(database.Client)
 var Validate = validator.New()
 
@@ -112,6 +121,25 @@ type VerifyBVNResponseData struct {
 type KycFileTypeRequest struct {
 	Document_Type string `json:"document_type"`
 	Document      string `json:"document"`
+}
+
+type UserProfile struct {
+	User_ID         string             `json:"user_id"`
+	Fullname        *string            `json:"full_name"`
+	Email           *string            `json:"email"`
+	Bio             *string            `json:"bio"`
+	Username        *string            `json:"username"`
+	Balance         int                `json:"balance"`
+	Profile_Picture *string            `json:"profile_picture"`
+	Identification  *string            `json:"identification"`
+	Social          *models.Social     `json:"socials"`
+	Donation        []*models.Donation `json:"donations"`
+}
+
+type Usernames struct {
+	User_ID         string  `json:"user_id"`
+	Username        *string `json:"username"`
+	Profile_Picture *string `json:"profile_picture"`
 }
 
 func (uc *UserController) Signup(ctx *gin.Context) {
@@ -253,6 +281,35 @@ func (uc *UserController) Login(ctx *gin.Context) {
 	})
 }
 
+func (uc *UserController) RefreshToken(c *gin.Context) {
+	// Extract refresh token from the request
+	refreshToken := c.Request.Header.Get("refresh-token")
+	// Validate refresh token
+	claims, msg, err := generate.ValidateToken(refreshToken)
+	if err != nil {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": msg})
+		return
+	}
+	// Generate new access and refresh tokens
+	newToken, newRefreshToken, err := generate.TokenGenerator(claims.Id, claims.Email)
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{"error": "Error generating new tokens"})
+		return
+	}
+	// Update tokens in the database
+	generate.UpdateAllTokens(newToken, newRefreshToken, claims.Id)
+	// Return the new tokens to the client
+	c.JSON(http.StatusOK, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "User session refreshed",
+		"data": gin.H{
+			"token": newToken,
+			// "refresh_token": newRefreshToken,
+		},
+	})
+}
+
 func (uc *UserController) Donation(c *gin.Context) {
 	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
@@ -307,6 +364,77 @@ func (uc *UserController) Donation(c *gin.Context) {
 		"error":         false,
 		"response code": 201,
 		"message":       "Donation created successfully",
+		"data":          "",
+	})
+}
+
+func (uc *UserController) Socials(c *gin.Context) {
+	var ct, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user, exists := c.Get("user")
+	if !exists {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not found"})
+		return
+	}
+	userStruct, ok := user.(middleware.User)
+	if !ok {
+		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
+	}
+	var social models.Social
+	if err := c.BindJSON(&social); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err})
+		return
+	}
+	validationErr := Validate.Struct(social)
+	if validationErr != nil {
+		fmt.Println(validationErr)
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       validationErr.Error(),
+			"data":          "",
+		})
+		return
+	}
+	foundUser, err := uc.UserService.GetUser(userStruct.Email)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+
+	count, err := SocialCollection.CountDocuments(ct, bson.M{"user_id": foundUser.User_ID})
+	if err != nil {
+		log.Panic(err)
+		c.JSON(http.StatusInternalServerError, gin.H{"error": err})
+		return
+	}
+	if count > 0 {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User social details already exists",
+			"data":          "",
+		})
+		return
+	}
+	social.ID = primitive.NewObjectID()
+	social.User_ID = foundUser.User_ID
+	createErr := uc.UserService.CreateSocial(&social)
+	if createErr != nil {
+		c.JSON(http.StatusBadGateway, gin.H{"message": createErr.Error()})
+		return
+	}
+	defer cancel()
+	c.JSON(http.StatusCreated, gin.H{
+		"error":         false,
+		"response code": 201,
+		"message":       "User socials created successfully",
 		"data":          "",
 	})
 }
@@ -648,8 +776,8 @@ func (uc *UserController) EmailVerification(c *gin.Context) {
 	updateUserEmail := uc.UserService.UpdateUserEmailStatus(foundUser.User_ID)
 	if updateUserEmail != nil {
 		c.JSON(http.StatusFound, gin.H{
-			"error":         false,
-			"response code": 200,
+			"error":         true,
+			"response code": 400,
 			"message":       "Something went wrong while updating user email",
 			"data":          updateUserEmail,
 		})
@@ -664,6 +792,10 @@ func (uc *UserController) EmailVerification(c *gin.Context) {
 }
 
 func (uc *UserController) Userselfie(c *gin.Context) {
+	bucket := "poc-donation-bucket1"
+	ctxAppEngine := appengine.NewContext(c.Request)
+	var err error
+
 	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
@@ -676,9 +808,29 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 		c.JSON(http.StatusUnauthorized, gin.H{"error": "User not a valid struct"})
 	}
 
-	// var (
-	// 	selfieRequest SelfieRequest
-	// )
+	var (
+		storageClient *storage.Client
+	)
+
+	storageClient, err = storage.NewClient(ctxAppEngine, option.WithCredentialsFile("poc-donation-1fd74214994c.json"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       err.Error(),
+		})
+		return
+	}
+
+	// storageClient, err = storage.NewClient(ctxAppEngine, option.WithCredentialsFile("poc-donation-176e6cbcd64b.json"))
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{
+	// 		"error":         true,
+	// 		"response code": 500,
+	// 		"message":       err.Error(),
+	// 	})
+	// 	return
+	// }
 
 	file, header, err := c.Request.FormFile("image")
 	if err != nil {
@@ -693,27 +845,57 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 		return
 	}
 
+	sw := storageClient.Bucket(bucket).Object(header.Filename).NewWriter(ctxAppEngine)
+
+	if _, err := io.Copy(sw, file); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       err.Error(),
+		})
+		return
+	}
+
+	if err := sw.Close(); err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       err.Error(),
+		})
+		return
+	}
+
+	_, errr := url.Parse("/" + bucket + "/" + sw.Attrs().Name)
+	if errr != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       errr.Error(),
+		})
+		return
+	}
+
 	// Get a GridFS bucket
-	fs, err := gridfs.NewBucket(db)
-	if err != nil {
-		fmt.Println("err", err)
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	// fs, err := gridfs.NewBucket(db)
+	// if err != nil {
+	// 	fmt.Println("err", err)
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 	return
+	// }
 
-	// Create an upload stream with some options and upload the file
-	uploadStream, err := fs.OpenUploadStream(header.Filename)
-	if err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
-	defer uploadStream.Close()
+	// // Create an upload stream with some options and upload the file
+	// uploadStream, err := fs.OpenUploadStream(header.Filename)
+	// if err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 	return
+	// }
+	// defer uploadStream.Close()
 
-	// Copy the file data to GridFS
-	if _, err = io.Copy(uploadStream, file); err != nil {
-		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
-		return
-	}
+	// // Copy the file data to GridFS
+	// if _, err = io.Copy(uploadStream, file); err != nil {
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})
+	// 	return
+	// }
 	foundUser, err := uc.UserService.GetUser(userStruct.Email)
 	defer cancel()
 	if err != nil {
@@ -731,6 +913,7 @@ func (uc *UserController) Userselfie(c *gin.Context) {
 			Key: "$set",
 			Value: bson.D{
 				primitive.E{Key: "selfie_upload", Value: true},
+				// primitive.E{Key: "profile_picture", Value: true},
 			},
 		},
 	}
@@ -815,7 +998,95 @@ func (uc *UserController) UserProfile(c *gin.Context) {
 	})
 }
 
+func (uc *UserController) UserProfileNoAuth(c *gin.Context) {
+	// bucket := "poc-donation-bucket1"
+	// ctxAppEngine := appengine.NewContext(c.Request)
+
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	user := c.Query("id")
+	if user == "" {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error":         true,
+			"response code": 401,
+			"message":       "No userId provided",
+		})
+		return
+	}
+
+	var (
+		userProfile UserProfile
+	)
+
+	foundUser, err := uc.UserService.GetUserByID(user)
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "User does not exist",
+			"data":          "",
+		})
+		return
+	}
+
+	// foundKyc, _ := uc.UserService.GetUserKycByID(user)
+	// defer cancel()
+
+	// fs, err := gridfs.NewBucket(db)
+	// if err != nil {
+	// 	fmt.Println("err", err)
+	// }
+
+	// downloadStream, err := fs.OpenDownloadStreamByName(*foundKyc.Kyc_Image)
+	// if err != nil {
+	// 	fmt.Println("err", err)
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Error opening download stream"})
+	// 	return
+	// }
+	// defer downloadStream.Close()
+
+	// Get the length of the download stream
+	// fileSize := downloadStream.GetFile().Length
+	// photoContent := make([]byte, fileSize)
+
+	// // Read the photo content into the byte slice
+	// if _, err := io.ReadFull(downloadStream, photoContent); err != nil {
+	// 	fmt.Println("err", err)
+	// 	c.JSON(http.StatusInternalServerError, gin.H{"error": "Error reading photo content"})
+	// 	return
+	// }
+	// base64Photo := base64.StdEncoding.EncodeToString(photoContent)
+
+	// fmt.Println("photoContent", base64Photo)
+
+	foundSocial, _ := uc.UserService.GetUserSocialsByID(user)
+	defer cancel()
+
+	foundDonations, _ := uc.UserService.GetUserDonationsByID(user)
+	defer cancel()
+	userProfile.Balance = foundUser.Balance
+	userProfile.Bio = foundUser.Bio
+	userProfile.Email = foundUser.Email
+	userProfile.Fullname = foundUser.Fullname
+	userProfile.Identification = foundUser.Identification
+	userProfile.Profile_Picture = foundUser.Profile_Picture
+	userProfile.User_ID = foundUser.User_ID
+	userProfile.Username = foundUser.Username
+	userProfile.Social = foundSocial
+	userProfile.Donation = foundDonations
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "User profile retrieved successfully",
+		"data":          userProfile,
+	})
+}
+
 func (uc *UserController) VerifyBVN(c *gin.Context) {
+	bucket := "poc-donation-bucket1"
+	ctxAppEngine := appengine.NewContext(c.Request)
+
 	var ctx, cancel = context.WithTimeout(context.Background(), 100*time.Second)
 	defer cancel()
 	user, exists := c.Get("user")
@@ -888,6 +1159,46 @@ func (uc *UserController) VerifyBVN(c *gin.Context) {
 		return
 	}
 
+	storageClient, err := storage.NewClient(ctxAppEngine, option.WithCredentialsFile("poc-donation-1fd74214994c.json"))
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       err.Error(),
+		})
+		return
+	}
+	defer storageClient.Close()
+
+	foundKyc, _ := uc.UserService.GetUserKycByID(*userStruct.Id)
+	defer cancel()
+
+	objectHandle := storageClient.Bucket(bucket).Object(*foundKyc.Kyc_Image)
+	// Check if the file exists
+	if _, err := objectHandle.Attrs(ctxAppEngine); err != nil {
+		c.JSON(http.StatusNotFound, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "Image not found",
+		})
+		return
+	}
+
+	url, err := storage.SignedURL(bucket, *foundKyc.Kyc_Image, &storage.SignedURLOptions{
+		GoogleAccessID: "poc-donation-service1@poc-donation.iam.gserviceaccount.com",                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   // Replace with your Google Cloud Storage service account's email
+		PrivateKey:     []byte("-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQDnM6/2VxT7P/rA\n2Lp/bICJrRWFiBxVR2vAXkWCpj86YN3me8dnorLwBkDUByLgWTtg91Ls4WikjB2y\ncxphwk0Bg0T5oqlp+zsNPZ6XKUReB2rqg3QJ9839V4uzJSlverROiHz/3Hl/V7b7\n28lz2+R2peoTv+3GuGVKx+cMWcl9gX/GKtT1JjqnKMz5TnDMU/obfmzIC8I8Xprj\nmPnp1Dc55C3O9eVdV7L4aarEql0/LZAoG/9UlG8oz1/mgeWeQs/XFDRemVcZ3uIC\njnOjOTr4zutuEfHkb1En1NSaSvNmG8JgxcDnpsUSf9kPZLBmaajHiu4/yAtQeeCh\nJ/nmBRr1AgMBAAECggEACMb1jyyPJ1quclPIAL5lwtRHVOJt8O7dMFhj2ynkjJrQ\n0ccxMsYCdQpHu8TplgrNLkk1ZLjJ+DU5i2TDQ6LUuZH6NF/wfo2DGGWWd7ahWdB+\nRpjm9tnpgAyqyQpIIGtQHQshc7UzB5qU38rgQv2+FqMF1+oZZMnrToN4Sge+ln0Z\nmTOH8DuqRTFGCiTKpFeucFgsHm6uEuaSVJtKaqiS77yTsF4TazprirHu+WbeC7UE\nM8wVlpx1smpPLcDBfP68vZxRNY5wKHGqEWJLJf+PiI6Wn9LU/elU5XIelORx85X3\nqNKUTuL2Yp1+S7deMAlgqsRjdUoPs2MeNB7ucbKhoQKBgQD7kBVWhIYDVFfmstJg\n1yzeG9pDac3pwi2KW5cI834agLk2/i/nPF6omZDGUuXCK7RqvjFcyPTmWhZjQJpX\ndDeqRLLPo4bPv735XN/KZkUVDArGa8JPBS7YnlP3G1M8e4GcK8bnjUU8i410NC38\ndLjFrVJOPnnynWP6B2KnKkm8qwKBgQDrR6pd8yLW7TQrEYL6cGLpyKIOWQPC6amH\nj6kkNWlKya5Q2ng6FavKdie+PHw5rekaoQnFqd55SIxfa3evUlrQVwE0y5JaMZtM\nwgs194e/BNSxG63NmXTdFl0OKd8jkbXNbmK+3IOQL0szV7/5JmrYzFMmAY9vZJie\nPd9mbJlG3wKBgG22Kvgul9u/3w4oEwRVE6ZSc2BPNpSqMP5Ub4xh1S9t0FkhhnbM\np2PUhYVZBgcm1GpxREn5AoWr6HOk6ysU7mn9yBYydUsJjqrATIGTFLHXLKPYv0eD\nNSkX8/qjGiwYmTApD3hQ7k83dZumXh/qL+NWcbzaFokvBzk2G1pYYQw9AoGAPJXb\nvQ2a7xVt1ZlQzQSbs+/CK0eovExHJ21K9NP8JRICHTfktbBW6G+8lDQnGQM7f2vw\nhEHV1A1meDvIOhFO6U8+NEYnjaowf3eIQ4FWJ04rJuAlxUe63COiGr+VgidHVXsT\nWmqWRk6nYrU57gKCiQk0cBj+woR4+GaeXFWisqkCgYB6wto3zrMzeROo0D1jmRPU\nKqce7x+8ZaDlge/z3TpKCAp+ztzJybxYIJvdFkz+CPMyLGkcwTRb7QD86UuKfWQR\ncwpBmRFw41RqOnCrhmSi9QXvuBJ1RU1knQLKwoDN8Ck76rACWlXhat/KIroWFCtO\nQ3xb+767sc9b2JZI/0/1PQ==\n-----END PRIVATE KEY-----\n"), // Replace with your Google Cloud Storage service account's private key
+		Method:         http.MethodGet,
+		Expires:        time.Now().AddDate(100, 0, 0), // Set expiration to 100 years in the future
+	})
+	if err != nil {
+		c.JSON(http.StatusInternalServerError, gin.H{
+			"error":         true,
+			"response code": 500,
+			"message":       "Error generating signed URL",
+		})
+		return
+	}
+
 	foundUser, err := uc.UserService.GetUser(userStruct.Email)
 	defer cancel()
 	if err != nil {
@@ -906,6 +1217,7 @@ func (uc *UserController) VerifyBVN(c *gin.Context) {
 			Key: "$set",
 			Value: bson.D{
 				primitive.E{Key: "bvn_verified", Value: true},
+				primitive.E{Key: "profile_picture", Value: url},
 			},
 		},
 	}
@@ -1086,6 +1398,42 @@ func (uc *UserController) GetKycDetails(c *gin.Context) {
 
 }
 
+func (uc *UserController) GetAllUsers(c *gin.Context) {
+	var _, cancel = context.WithTimeout(context.Background(), 100*time.Second)
+	defer cancel()
+	var (
+	// username Username
+	// user     models.User
+	)
+	foundUser, err := uc.UserService.GetAllKycUsers()
+	defer cancel()
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error":         true,
+			"response code": 400,
+			"message":       "Something went wrong fetching users",
+			"data":          "",
+		})
+		return
+	}
+	// username.User = foundUser
+	var selectedUsers []Usernames
+	for _, user := range foundUser {
+		selectedUser := Usernames{
+			User_ID:         user.User_ID,
+			Username:        user.Username,
+			Profile_Picture: user.Profile_Picture,
+		}
+		selectedUsers = append(selectedUsers, selectedUser)
+	}
+	c.JSON(http.StatusFound, gin.H{
+		"error":         false,
+		"response code": 200,
+		"message":       "Users retrieved successfully",
+		"data":          selectedUsers,
+	})
+}
+
 func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 	userRoute := rg.Group("/user")
 	// {
@@ -1093,9 +1441,14 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 
 	userRoute.POST("/signup", uc.Signup)
 	userRoute.POST("/login", uc.Login)
+	userRoute.POST("/refresh-token", uc.RefreshToken)
 	userRoute.POST("/donate",
 		middleware.Authentication,
 		uc.Donation,
+	)
+	userRoute.POST("/add-socials",
+		middleware.Authentication,
+		uc.Socials,
 	)
 	userRoute.GET("/transactions",
 		middleware.Authentication,
@@ -1138,11 +1491,18 @@ func (uc *UserController) UserRoutes(rg *gin.RouterGroup) {
 		uc.UserProfile,
 	)
 
+	userRoute.GET("profile-noauth",
+		uc.UserProfileNoAuth,
+	)
+
 	userRoute.GET("/kyc-status",
 		middleware.Authentication,
 		uc.GetKycDetails,
 	)
 
+	userRoute.GET("/all",
+		uc.GetAllUsers,
+	)
 	// userRoute.POST("/create", uc.CreateUser)
 	// }
 }

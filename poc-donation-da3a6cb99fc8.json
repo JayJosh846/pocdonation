@@ -1,0 +1,13 @@
+{
+  "type": "service_account",
+  "project_id": "poc-donation",
+  "private_key_id": "da3a6cb99fc85d0874b0d5ff777627814ca9e703",
+  "private_key": "-----BEGIN PRIVATE KEY-----\nMIIEvAIBADANBgkqhkiG9w0BAQEFAASCBKYwggSiAgEAAoIBAQCy2eQf6ZcP8dIq\n02qh0+QdEta3U+83O/iXKhfjxAXR2IMCaS6jLnIDOcApjtZ8w5qEgaJo1w2oApBb\nQzI3IhVkOO07rBfGn13j5ROsX2NNwZuGz7jdYHecwykGwNhrNS5aS1KZqD7C32EM\ni/nk65zlG8i8BMoJ5DzBsCqC4X2zS4sLglz8EnBGyp1d1RvTUKFbkU/0HGsIL+3m\neapORNXPPMUk584eCwaLfKlmG1A48IZ26uygmJ1S+osmby18xUzVloOyr/06X5eb\ns8kP7dENO9aYbLCW5gMjKJNS7rwDckZRQ30q396lkJK2bKyn9ktXKHEi8qCw+Ea1\nqRxuKkadAgMBAAECggEALCLjThDKK7AkilcEEI2G1LnqbPF0ri/JiBxmKtocCY4h\nvn2QecqjbjJZPqg2PDHVNu/60V6IyzZew3bQtJRfrQzzVm+Aqo53kB7e/QHJMs4d\ngGZQm6kLu47Z2AXNIp/MIZJG/w5q9pJDk+ITODAA1vVFU0jnRwuhBrdftk7JQ25u\nI+UQSGvecnkLBUHZcECA3pMYg+N6dHSnJQfB2rvb+eHAF2QxLvq5bKE0/ST2ZGFk\nz4gnOGsyhXUew7LRt+lJ+wb2vElldX/6qyGb+a4skJ/jN0jVv801kY7CUN/XkNnt\nLRaTtM6r++9jE+FOTaoOxf07BQocNlnQsyC2C8jBIQKBgQDnKPZFoeNz/Uu6cGxY\nP0o2EVi64Xfx0ZL3SrNVGEFngrGNhXhK4NeST6gOrhu3Aj0RUqTAWZLeGO3TONAd\n02HCyMq27cwo5FZgqVJ1bI98uRTH4xMT6ZzP7XM3Y9dga/9wy6urDR+/Nhb5mYE3\nCYWrb7XFuZ7dOf8o/xqjLDtXdQKBgQDGEfOPxT9ax6jfYIC70gseTBLUPvqsBmWR\nk/TzXXajSEIu8kNzrTUYBmn4sGa/Ilk22zl7ba+LRB9cgO5jhvYBXOQVyJuPFiTR\nRr5Z5tw+eOZmLQf7axcgpXBpIAwgzt+X+qKuv5w9+bvvxY3kZ88RhdjgVr34nFg3\nCkjfF7B1iQKBgEufWvHsxDxt4RhdLxSvn9eQVTbODC9QIIRGK+TqynrShsOFppTY\nea2j4Zbr3qVAVjoUj1Fd/G4sOaGgNHWNca4HgknWAbRe/uMggZloqohjBClgYB1j\nj6l2RPsZ7pvcuPRtrPuIj5o+V8XQMjWPJ+ut4AmPcClvj8oZqt022zMBAoGAd0Fp\nt1+YtKzQNaZh/DQMM7K0B4zf2uGDF/LQohLdEpS4HJILIMPh2tRJy81SH7SrqIa4\nBmPVNPHQPB746X3h8pIeVitR1gYMJuEETRbd9tNOTajBTJR++U4C75i3FK3aHCRw\n/OwrQ3lwuX3l3+bM2w0Otowjl2NzDbiohYI64ZkCgYB0/mJsApThvpGvUzEt1/QY\nAcXSFKYcy+BV7zb5me4HtClLnxM1VI/qBg+hFqM04lPviGxnDgThFKDvx7A01Y0F\ndnwzzAupaPxTwzZf04IsRUbEuqIs84HYllRRezGJZ0YVsYqzQA/KcjAGFXL+rPyt\no8oIOXrUIMUvLHIsPPDxPg==\n-----END PRIVATE KEY-----\n",
+  "client_email": "poc-donation-bucket-service@poc-donation.iam.gserviceaccount.com",
+  "client_id": "112209619915297339740",
+  "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+  "token_uri": "https://oauth2.googleapis.com/token",
+  "auth_provider_x509_cert_url": "https://www.googleapis.com/oauth2/v1/certs",
+  "client_x509_cert_url": "https://www.googleapis.com/robot/v1/metadata/x509/poc-donation-bucket-service%40poc-donation.iam.gserviceaccount.com",
+  "universe_domain": "googleapis.com"
+}
